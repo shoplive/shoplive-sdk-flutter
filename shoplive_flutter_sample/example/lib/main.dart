@@ -92,6 +92,8 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
 
   bool _respondToRequests = true;
   bool _muted = false;
+  // OS PIP 사용 여부 — 끄면 in-App PIP(미니) 상태에서 홈으로 나갈 때 OS PIP 없이 백그라운드로 내려간다. 모든 start 경로에 함께 실린다.
+  bool _osPipEnabled = true;
   ShoplivePlayerState _playerState = ShoplivePlayerState.idle;
   ShopliveBroadcastState _broadcastState = ShopliveBroadcastState.idle;
 
@@ -246,7 +248,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
         playOptions: preview ? const ShoplivePlayOptions(presentationStyle: ShoplivePresentationStyle.pip) : null,
         configuration: ShoplivePlayerConfiguration(
           type: preview ? ShoplivePlayerType.preview : ShoplivePlayerType.live,
-          pip: const ShoplivePipOptions(isInAppPipEnabled: true),
+          pip: ShoplivePipOptions(isInAppPipEnabled: true, isOSPipEnabled: _osPipEnabled),
           sound: const ShopliveSoundOptions(muteOnStart: false, mixWithOthers: true),
           navigation: ShopliveNavigationOptions(shareScheme: shareScheme.isEmpty ? null : shareScheme),
           android: const ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: true),
@@ -269,7 +271,9 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
       setState(() => _studioJwt = null);
       return;
     }
-    await _run('Streamer START', () => _streamer.start(broadcastKey));
+    // 고급 제어 > Streamer 의 Web page URL 칸을 함께 쓴다(비우면 웹페이지 없음).
+    final url = _webPageUrl.text.trim();
+    await _run('Streamer START', () => _streamer.start(broadcastKey, webPageUrl: url.isEmpty ? null : url));
   }
 
   Future<String?> _loginStudio() async {
@@ -412,20 +416,31 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
         _section('Player'),
         _field(_campaignKey, 'Campaign key'),
         _buttons([
-          _button('start', () => _player.start(_campaignKey.text.trim())),
+          _button(
+            'start',
+            () => _player.start(
+              _campaignKey.text.trim(),
+              configuration: ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isOSPipEnabled: _osPipEnabled)),
+            ),
+          ),
           _button(
             'start PIP',
             () => _player.start(
               _campaignKey.text.trim(),
               playOptions: const ShoplivePlayOptions(presentationStyle: ShoplivePresentationStyle.pip),
-              configuration: const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isInAppPipEnabled: true)),
+              configuration: ShoplivePlayerConfiguration(
+                pip: ShoplivePipOptions(isInAppPipEnabled: true, isOSPipEnabled: _osPipEnabled),
+              ),
             ),
           ),
           _button(
             'start preview',
             () => _player.start(
               _campaignKey.text.trim(),
-              configuration: const ShoplivePlayerConfiguration(type: ShoplivePlayerType.preview),
+              configuration: ShoplivePlayerConfiguration(
+                type: ShoplivePlayerType.preview,
+                pip: ShoplivePipOptions(isOSPipEnabled: _osPipEnabled),
+              ),
             ),
           ),
           _button('play', () => _player.play(_campaignKey.text.trim())),
@@ -441,6 +456,14 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
           _button('exit PiP', _player.exitPictureInPicture),
           _button('state', () async => (await _player.getState()).name),
           _button('resize fit', () => _player.setResizeMode(ShopliveResizeMode.fit)),
+          // OS PiP on/off — 끄면 홈으로 나갈 때 OS PIP 없이 백그라운드로 내려간다. SDK 는 IDLE 에서만 설정을 받으므로
+          // 이미 한 번 재생했다면 앱을 다시 띄운 뒤 첫 재생 전에 누른다. 값은 모든 start 경로(PLAY 포함)에 함께 실린다.
+          for (final enabled in [false, true])
+            _button('OS PiP ${enabled ? 'on' : 'off'}', () async {
+              setState(() => _osPipEnabled = enabled);
+              await _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isOSPipEnabled: enabled)));
+              return 'osPip=$enabled (첫 재생 전에 설정)';
+            }),
           for (final enabled in [false, true])
             _button(
               'PiP drag-out close ${enabled ? 'on' : 'off'}',
@@ -448,7 +471,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
             ),
           _button('config', () async {
             final c = await _player.getConfiguration();
-            return 'type=${c.type?.name} inAppPip=${c.pip?.isInAppPipEnabled} dragOutClose=${c.pip?.isDragOutToCloseEnabled} '
+            return 'type=${c.type?.name} inAppPip=${c.pip?.isInAppPipEnabled} osPip=${c.pip?.isOSPipEnabled} dragOutClose=${c.pip?.isDragOutToCloseEnabled} '
                 'muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
           }),
         ]),
