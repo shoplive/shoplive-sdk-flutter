@@ -210,15 +210,14 @@ internal object PlayerMapper {
     private fun nonNullFloat(a: Args?, key: String): Float? = a?.optFloat(key) ?: requireNotExplicitNull(a, key, null)
     private fun <E> nonNullEnum(a: Args?, key: String, table: Map<String, E>): E? = a?.optWireEnum(key, table)
 
-    // SDK 3.0.3에서 결과 타입의 alertType 기본값이 null→ALERT로 바뀌었다. 브릿지는 생략 시 null을 명시 전달하므로($default 미적용) 3.0.2 동작 유지.
-    // TODO(SDP-VERIFY): 요확인 — alertType 생략 시 기본값(현재 Android=null 웹 기본, iOS=.toast) 3.0.3 네이티브 기본 ALERT로 맞출지 사용자 결정 대기 · 근거 SMV-1749
+    // alertType 생략 = TOAST(iOS와 같은 값, SMV-1749 결정). SDK 3.0.3 생성자 기본값(ALERT)이나 null(웹 기본)을 쓰지 않는다.
     fun toCouponResult(couponId: String, a: Args): ShopliveCouponResult = Bridge.constructing(K.STATUS) {
         ShopliveCouponResult(
             couponId,
             a.requireBool(K.SUCCESS),
             a.optString(K.MESSAGE),
             a.requireWireEnum(K.STATUS, RESULT_STATUS),
-            a.optWireEnum(K.ALERT_TYPE, ALERT_TYPE),
+            a.optWireEnum(K.ALERT_TYPE, ALERT_TYPE) ?: ShopliveResultAlertType.TOAST,
         )
     }
 
@@ -228,7 +227,7 @@ internal object PlayerMapper {
             a.requireBool(K.SUCCESS),
             a.optString(K.MESSAGE),
             a.requireWireEnum(K.STATUS, RESULT_STATUS),
-            a.optWireEnum(K.ALERT_TYPE, ALERT_TYPE),
+            a.optWireEnum(K.ALERT_TYPE, ALERT_TYPE) ?: ShopliveResultAlertType.TOAST,
         )
     }
 

@@ -9,6 +9,8 @@ class ShopliveCouponResult {
   final bool success;
   final ShopliveResultStatus status;
   final String? message;
+
+  /// 생략하면 Android·iOS 모두 [ShopliveResultAlertType.toast].
   final ShopliveResultAlertType? alertType;
 
   @internal
@@ -21,6 +23,8 @@ class ShopliveCustomActionResult {
   final bool success;
   final ShopliveResultStatus status;
   final String? message;
+
+  /// 생략하면 Android·iOS 모두 [ShopliveResultAlertType.toast].
   final ShopliveResultAlertType? alertType;
 
   @internal

@@ -8,7 +8,7 @@ Built on Shoplive SDK 3.0.3 (Android `cloud.shoplive:shoplive-player-sdk:3.0.3`,
 ### Changed
 * `ShoplivePlayerType.preview` on iOS also sets the SDK 3.0.3 `ShoplivePlayerConfiguration.type`, in addition to selecting the `.preview` preset.
 * Error events: `rawCode` is now always set on iOS too. Android player errors use the SDK 3.0.3 shared error type (`cloud.shoplive.core`). Every 3.0.2 player error code name still exists there, and the event keys (`code`, `message`, `rawCode`, `recoverable`) are unchanged. SDK 3.0.3 adds new codes, so keep treating `code` as an opaque string.
-* Coupon / custom-action results: an omitted `alertType` is passed to the SDK the same way as in 3.0.2 (Android: no value, iOS: `toast`), although SDK 3.0.3 changed its own default to `alert`. Whether to adopt that default is still open, and the Android runtime result with SDK 3.0.3 is not yet checked on a device. The fallback result is unchanged (`success: false, status: keep, alertType: toast`).
+* Coupon / custom-action results: an omitted `alertType` now means `toast` on both platforms. iOS already did this; Android used to pass no value (the web default). SDK 3.0.3 changed its own initializer default to `alert`; the plugin does not use it. The fallback result is unchanged (`success: false, status: keep, alertType: toast`).
 * iOS: downloads `ShoplivePlayerSDK` 3.0.3 and verifies the new sha256.
 
 ## 3.0.2

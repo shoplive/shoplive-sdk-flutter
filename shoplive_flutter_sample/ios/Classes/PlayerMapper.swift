@@ -117,9 +117,8 @@ enum PlayerMapper {
                                    status: try a.requireWireEnum("status", resultStatus), alertType: try alert(a))
     }
 
-    /// The contract makes alertType optional (D-11): missing -> toast (3.0.2 behavior kept; SDK 3.0.3 init default is .alert).
+    /// The contract makes alertType optional (D-11): missing -> toast on both platforms (SMV-1749; the SDK 3.0.3 init default .alert is not used).
     private static func alert(_ a: Args) throws -> ShopliveResultAlertType {
-        // TODO(SDP-VERIFY): 요확인 — alertType 생략 시 기본값(현재 Android=null 웹 기본, iOS=.toast) 3.0.3 네이티브 기본 ALERT로 맞출지 사용자 결정 대기 · 근거 SMV-1749
         try a.optWireEnum("alertType", alertType) ?? .toast
     }
 

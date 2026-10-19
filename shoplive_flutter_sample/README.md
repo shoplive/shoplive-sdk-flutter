@@ -165,7 +165,7 @@ The Dart API and channel contract are the same on both platforms. The iOS SDK di
 | Ignored on iOS | `configuration.android.*`, `pip.aspectRatio`, `setUser(profile.custom)` - accepted and ignored (no iOS SDK counterpart). `initialize(appVersion:)` is ignored on both platforms since SDK 3.0.3 |
 | Not exposed yet | iOS-only SDK options: `sound.autoResumeOnCallEnded`, `pip.fixedWidth` / `floatingOffset` / `windowProvider`, `appearance.allowScreenCapture`, loading images, chat fonts, `attribution.advertisingId` - the SDK defaults apply |
 | Events | `playback` `failed`: `code` / `message` are `null`. `error`: `rawCode` is the SDK raw code (always set since SDK 3.0.3, same as Android). Streamer `stateChanged.isRehearsal` is `null` (the iOS SDK has no rehearsal flag) |
-| Coupon / custom-action respond | `alertType` defaults to `toast` when omitted (unchanged from 3.0.2; the SDK 3.0.3 initializer default `.alert` is not used) |
+| Coupon / custom-action respond | `alertType` defaults to `toast` when omitted, same as Android (the SDK 3.0.3 initializer default `.alert` is not used) |
 | `indicatorColor` | ARGB as an unsigned 32-bit value (`0xFF00FF00`), same on Android |
 | Removed 1.x iOS options | `setKeepAspectOnTabletPortrait`, preview close events and the close-button handlers have no 3.x counterpart (`setEnabledPipSwipeOut`: closest is `pip.isDragOutToCloseEnabled`, SDK 3.0.3). The 1.x sample app's `CLICK_BACK_BUTTON` workaround (switch to in-app PIP) was app code; with 3.x, handle such commands from `webCommandReceived` if your app still needs it |
 

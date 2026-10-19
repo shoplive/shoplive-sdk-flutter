@@ -253,11 +253,26 @@ class PlayerMapperTest {
         assertEquals(true, r.success)
         assertEquals(ShopliveResultStatus.SHOW, r.status)
         assertNull(r.message)
-        assertNull(r.alertType)
+        assertEquals(ShopliveResultAlertType.TOAST, r.alertType) // 생략 = TOAST(iOS와 동일, SMV-1749)
         val full = PlayerMapper.toCustomActionResult("a1", Args.of(mapOf("success" to false, "status" to "hide", "message" to "m", "alertType" to "alert")))
         assertEquals("a1", full.id)
         assertEquals("m", full.message)
         assertEquals(ShopliveResultAlertType.ALERT, full.alertType)
+    }
+
+    @Test
+    fun resultAlertType_omittedIsToast_invalidRejected() {
+        // SMV-1749: 생략만 TOAST(iOS와 동일). 키+null·미지 값은 TOAST로 삼키지 않고 거부한다.
+        val base = mapOf("success" to true, "status" to "hide")
+        val coupon = { m: Map<String, Any?> -> PlayerMapper.toCouponResult("c", Args.of(base + m)).alertType }
+        val custom = { m: Map<String, Any?> -> PlayerMapper.toCustomActionResult("a", Args.of(base + m)).alertType }
+        for (build in listOf(coupon, custom)) {
+            assertEquals(ShopliveResultAlertType.TOAST, build(emptyMap()))
+            assertEquals(ShopliveResultAlertType.TOAST, build(mapOf("alertType" to "toast")))
+            assertEquals(ShopliveResultAlertType.ALERT, build(mapOf("alertType" to "alert")))
+            assertThrows(BridgeArgumentException::class.java) { build(mapOf("alertType" to null)) }
+            assertThrows(BridgeArgumentException::class.java) { build(mapOf("alertType" to "banner")) }
+        }
     }
 
     @Test // case: N-06
