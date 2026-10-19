@@ -133,8 +133,9 @@ await player.close();           // always succeeds
 
 ### Configuration
 
-- `start(configuration:)` and `setConfiguration` **merge** the given fields on top of the current settings. Omitted fields keep their values. `getConfiguration()` returns the full current configuration.
+- `start(configuration:)` and `setConfiguration` **merge** the given fields on top of the current settings. Omitted fields keep their values. `getConfiguration()` returns the full configuration that the next `start` uses, except `overlay.ui`: a later `setOverlayUI` overrides it on the next `start`, so read that value with `getOverlayUI()`. A running session keeps the settings it started with: the SDK ignores configuration changes after playback has started, so changes made while a session is running apply to the next `start`.
 - Settings made before the first `start`, or across a screen recreation, are kept and applied to the next player instance.
+- Every `start` opens a new player session with the merged configuration. If a session is open (fullscreen or in-app PIP), it is closed first; its `closed` event is not delivered, and the new session's events follow. If the previous session was closed and the new one then fails to start, one `closed` state is sent instead. If the start fails before that (invalid argument, no host screen), the running session is left as it is. The SDK does not accept configuration changes once playback has started, so use `play` to switch campaigns inside the running session with its current settings.
 - `presentationStyle: pip` requires `pip.isInAppPipEnabled: true` in the merged configuration. Otherwise `start` fails with `INVALID_ARGUMENT`.
 - `pip.isDragOutToCloseEnabled` (SDK 3.0.3+, Android and iOS): whether the in-app PIP window closes when dragged off the screen. Omitted keeps the current value (the SDK default is `true` on both platforms).
 - `configuration.android` holds Android-only options.
@@ -160,7 +161,7 @@ The Dart API and channel contract are the same on both platforms. The iOS SDK di
 
 | Topic | iOS behavior |
 |---|---|
-| `start` | The plugin creates the SDK player view controller and presents it over the top-most screen. Calling `start` while a session is open (fullscreen or in-app PIP) switches the campaign in the same player instead of opening a second one |
+| `start` | The plugin creates the SDK player view controller and presents it over the top-most screen. Calling `start` while a session is open (fullscreen or in-app PIP) closes it and presents a new player, as on Android |
 | `configuration.type` | `preview` / `live` select the SDK `.preview` / `.default` configuration preset and set the SDK `type` (3.0.3), then the other fields are applied |
 | Ignored on iOS | `configuration.android.*`, `pip.aspectRatio`, `setUser(profile.custom)` - accepted and ignored (no iOS SDK counterpart). `initialize(appVersion:)` is ignored on both platforms since SDK 3.0.3 |
 | Not exposed yet | iOS-only SDK options: `sound.autoResumeOnCallEnded`, `pip.fixedWidth` / `floatingOffset` / `windowProvider`, `appearance.allowScreenCapture`, loading images, chat fonts, `attribution.advertisingId` - the SDK defaults apply |
