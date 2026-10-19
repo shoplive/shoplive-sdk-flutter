@@ -89,7 +89,7 @@ void main() {
       messenger.setMockMethodCallHandler(MethodChannel(ch), (call) async {
         calls.add('$ch.${call.method}');
         if (call.method == 'setStreamToken') streamTokenArg = (call.arguments as Map)['token'];
-        if (call.method == 'getSdkVersion') return '3.0.2';
+        if (call.method == 'getSdkVersion') return '3.0.3';
         return null;
       });
     }
@@ -142,7 +142,7 @@ void main() {
     for (final ch in ['shoplive_core', 'shoplive_streamer']) {
       messenger.setMockMethodCallHandler(MethodChannel(ch), (call) async {
         calls.add('$ch.${call.method}');
-        return call.method == 'getSdkVersion' ? '3.0.2' : null;
+        return call.method == 'getSdkVersion' ? '3.0.3' : null;
       });
     }
     addTearDown(() {

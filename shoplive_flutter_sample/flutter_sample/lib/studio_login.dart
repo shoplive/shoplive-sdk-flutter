@@ -13,7 +13,7 @@ import 'dart:io';
 ///   POST {host}studio/v2/administrator/login, form-urlencoded id, password, source=STREAM_APP, duration=10000
 ///   2xx -> {"accessToken": "<jwt>"}; error -> {"_s": code, "_e" | "message": text}
 ///
-/// The Flutter plugin always talks to the production stage (stage selection is internal in SDK 3.0.2),
+/// The Flutter plugin always talks to the production stage (stage selection is internal in SDK 3.x),
 /// so only the production host is used here. Credentials and the JWT are never logged or persisted.
 class StudioLogin {
   StudioLogin({StudioTransport? transport}) : _transport = transport ?? _HttpClientTransport();
