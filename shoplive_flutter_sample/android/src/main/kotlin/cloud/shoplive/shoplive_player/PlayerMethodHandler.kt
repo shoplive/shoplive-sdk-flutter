@@ -6,6 +6,7 @@ import cloud.shoplive.player.ShoplivePlayer
 import cloud.shoplive.player.ShoplivePlayerConfiguration
 import cloud.shoplive.player.ShoplivePlayerControlling
 import cloud.shoplive.player.ShoplivePlayerDelegate
+import cloud.shoplive.player.ShoplivePlayerEvent
 import cloud.shoplive.player.ShoplivePlayerPresentationStyle
 import cloud.shoplive.player.ShoplivePlayerState
 import cloud.shoplive.player.ShopliveResizeMode
@@ -30,7 +31,8 @@ internal class SdkPlayerPort(private val player: ShoplivePlayer) : PlayerPort, S
 /**
  * 채널 `shoplive_player` 메서드 처리(design.md rev2 §2.4·§4.2). [H]는 호스트 화면(Android: Activity) — JVM 테스트에서 대체.
  *
- * 인스턴스 수명: 호스트가 필요한 첫 호출에 생성. start 때 호스트가 바뀌었고 비실행이면 재생성. 호스트 detach 시 비실행 인스턴스 해제.
+ * 인스턴스 수명: 인스턴스는 start에서만 만들고, 한 번 start된 인스턴스는 다음 start에 재사용하지 않는다([portForStart]).
+ * 호스트 detach 시 비실행 인스턴스 해제.
  * 설정 보존(R2-N1): 마지막 확정 configuration·resizeMode·overlayUI를 인스턴스와 별도로 보관해 새 인스턴스에 이관.
  * 모든 메서드는 메인 스레드에서 호출된다(MethodChannel).
  */
@@ -120,7 +122,8 @@ internal class PlayerMethodHandler<H : Any>(
             savedConfiguration = merged
             null
         }
-        k.GET_CONFIGURATION -> PlayerMapper.configurationToWire(port?.configuration ?: currentConfiguration())
+        // 다음 start에 쓰일 설정(보관값 우선). 실행 중 SET은 SDK가 무시하므로(ConfigurationGuard) 인스턴스 값이 아니라 보관값을 돌려준다(iOS 같은 의미).
+        k.GET_CONFIGURATION -> PlayerMapper.configurationToWire(currentConfiguration())
         k.SET_REQUEST_TIMEOUT -> registry.setTimeoutMs(
             args.optLong(k.TIMEOUT_MS) ?: throw BridgeArgumentException(k.TIMEOUT_MS, "Int", "missing"),
         ).let { null }
@@ -143,29 +146,54 @@ internal class PlayerMethodHandler<H : Any>(
             // B-09: SDK는 Log.w 후 조용히 거부하므로 브릿지가 사전 거부(개발자 확정). 검증 실패 시 인스턴스를 만들지 않는다.
             throw BridgeArgumentException("${k.PLAY_OPTIONS}.${k.PRESENTATION_STYLE}", "fullscreen unless pip.isInAppPipEnabled", "pip")
         }
+        // 여기까지(호스트·키·B-09 검증)가 실패하면 실행 중 세션은 그대로 둔다. 아래부터 이전 세션을 교체한다.
+        val replacedRunning = port?.isRunning == true
         val p = portForStart(currentHost)
-        // TODO(SDP-VERIFY): 요확인 — 실행 중 start 재호출 시 SDK 동작(교체/무시/중복) · 근거 DRAFT-flutter-sdk-302-android/T-01 · 자동 통과 금지(실측)
         // TODO(SDP-VERIFY): 요확인 — launch context(Activity)가 GC됐거나 LifecycleOwner가 아니면 SDK가 Log.w 후 조용히 거부(브릿지 감지 불가) · 근거 DRAFT-flutter-sdk-302-android/NR-02 · 자동 통과 금지(실측)
-        if (partial == null) {
-            p.start(campaignKey, options)
-        } else {
-            p.start(campaignKey, options, effective)
-            savedConfiguration = effective
+        try {
+            if (partial == null) {
+                p.start(campaignKey, options)
+            } else {
+                p.start(campaignKey, options, effective)
+                savedConfiguration = effective
+            }
+        } catch (t: Throwable) {
+            // 이전 세션은 이미 닫혔는데(closed 이벤트는 retire에서 막음) 새 세션 시작이 예외로 실패: Dart 상태가 낡지 않게 closed 1회.
+            if (replacedRunning) notifyClosed(p)
+            throw t
         }
         return null
     }
 
+    private fun notifyClosed(p: PlayerPort) = Bridge.guardCallback(TAG, "notifyClosed") {
+        p.delegate?.onEvent(p, ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.CLOSED))
+    }
+
+    /**
+     * start마다 effective configuration이 새 세션에 적용되도록 인스턴스를 고른다(SMV-1749, T-01·T-04 해소).
+     * SDK 3.0.3 근거(javap): ConfigurationGuard.set은 state == IDLE일 때만 값을 받고(그 외 Log.w 후 무시 — start의 설정 인자 포함),
+     * state는 생성 시에만 IDLE이며 close 후에는 CLOSED로 남는다 → 한 번 start된 인스턴스는 설정을 바꿀 수 없다.
+     * SessionRegistry는 인스턴스별 등록(Map)이라 새 인스턴스 생성에 제약이 없다.
+     * 그래서 IDLE이 아니거나 호스트가 바뀐 인스턴스는 해제 후 close하고 현재 호스트로 새로 만든다.
+     */
     private fun portForStart(currentHost: H): PlayerPort {
-        val p = port
-        if (p == null) return create(currentHost)
-        if (boundHost?.get() !== currentHost) {
-            if (!p.isRunning) {
-                release(p)
-                return create(currentHost)
-            }
-            // TODO(SDP-VERIFY): 요확인 — 실행 중 세션이 있을 때 Activity가 바뀐 경우 기존 인스턴스 유지(launch context는 옛 Activity 약참조) · 근거 DRAFT-flutter-sdk-302-android/T-04 · 자동 통과 금지(실측)
-        }
-        return p
+        val p = port ?: return create(currentHost)
+        if (p.state == ShoplivePlayerState.IDLE && boundHost?.get() === currentHost) return p
+        retire(p)
+        return create(currentHost)
+    }
+
+    /**
+     * 교체되는 인스턴스 정리. DetachedDelegate를 먼저 붙인 뒤 close한다 — 이전 세션의 closed·늦은 이벤트가 새 세션 이벤트와
+     * 섞여 Dart에 가지 않게 하고(iOS와 같은 의미), 이전 세션의 쿠폰·커스텀 요청은 폴백으로 1회 응답한다 — 대기 중인 것은
+     * 여기서 flushAll(새 세션은 아직 시작 전이라 대기 요청은 모두 이전 세션 것), 이후 도착분은 DetachedDelegate.
+     * close는 인스턴스 상태를 동기로 끝낸다(endSession: CLOSED·SessionRegistry.remove·delegate=null). 화면(Activity) 종료는 비동기.
+     */
+    private fun retire(p: PlayerPort) {
+        release(p)
+        registry.flushAll()
+        // TODO(SDP-VERIFY): 요확인 — 이전 전체화면 Activity finish(비동기)와 새 start의 Activity 실행이 겹칠 때 화면 전환(특히 같은 campaignKey) 실측 · 근거 SMV-1749
+        if (p.isRunning) p.close() // SDK isRunning = state ∉ {IDLE, CLOSED}. 그 밖의 close는 SDK에서 no-op(sessionToken null)
     }
 
     // ---- 인스턴스 ----

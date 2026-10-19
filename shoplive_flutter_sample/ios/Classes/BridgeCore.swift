@@ -62,6 +62,97 @@ func bridgedCall(_ block: () throws -> Any?) -> BridgeOutcome {
     }
 }
 
+// MARK: - WebURLRule
+
+/// webPageUrl rule. Platform URL parsers decide differently (java.net.URI vs URLComponents/URL, and iOS 15/16 vs 17+),
+/// so the decision is this plain string rule only (SMV-1749 R1-01), identical to Android BridgeSupport `WebUrlRule` and
+/// checked on both sides with the shared vectors in shoplive_streamer/test/fixtures/http_url_vectors.json:
+///  1. non-empty, no space/control character (`isSpaceOrControl`)
+///  2. starts with `http://` or `https://` (ASCII case-insensitive)
+///  3. no backslash in the authority (before the first `/`, `?` or `#`)
+///  4. non-empty host: the authority without userinfo (before the last `@`) and port (after the last `:`;
+///     `[IPv6]` keeps everything up to the first `]`)
+/// Anything else (non-ASCII path, underscore host, port format, ...) is not judged here and is left to the SDK.
+enum WebURLRule {
+    static let expected = "http(s) URL without spaces"
+    private static let schemes: [[UInt32]] = ["http://", "https://"].map { $0.unicodeScalars.map(\.value) }
+    private static let authorityEnd: Set<UInt32> = Set("/?#".unicodeScalars.map(\.value))
+    private static let asciiCaseOffset: UInt32 = 0x20
+
+    static func accepts(_ s: String) -> Bool {
+        let v = s.unicodeScalars.map(\.value)
+        if v.isEmpty || v.contains(where: isSpaceOrControl) { return false }
+        guard let scheme = schemes.first(where: { hasASCIIPrefixIgnoringCase(v, $0) }) else { return false }
+        let rest = v.dropFirst(scheme.count)
+        let authority = Array(rest.prefix { !authorityEnd.contains($0) })
+        return !authority.contains(backslash) && !host(authority).isEmpty
+    }
+
+    private static let backslash = UInt32(0x5C)
+    private static let at = UInt32(0x40)
+    private static let colon = UInt32(0x3A)
+    private static let openBracket = UInt32(0x5B)
+    private static let closeBracket = UInt32(0x5D)
+
+    /// authority -> host: drops userinfo (before the last `@`) and port (after the last `:`); `[`... keeps up to the first `]` (IPv6).
+    private static func host(_ authority: [UInt32]) -> ArraySlice<UInt32> {
+        let hostPort = authority.lastIndex(of: at).map { authority[($0 + 1)...] } ?? authority[...]
+        if hostPort.first == openBracket {
+            return hostPort.firstIndex(of: closeBracket).map { hostPort[...$0] } ?? hostPort
+        }
+        return hostPort.lastIndex(of: colon).map { hostPort[..<$0] } ?? hostPort
+    }
+
+    /// C0/DEL/C1 controls + Unicode White_Space, fixed by code point (same list as Android).
+    static func isSpaceOrControl(_ cp: UInt32) -> Bool {
+        cp <= 0x20 || (0x7F...0x9F).contains(cp) || cp == 0xA0 || cp == 0x1680 || (0x2000...0x200A).contains(cp)
+            || cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000
+    }
+
+    /// `prefix` is lowercase ASCII; no Unicode/locale case folding.
+    private static func hasASCIIPrefixIgnoringCase(_ v: [UInt32], _ prefix: [UInt32]) -> Bool {
+        v.count >= prefix.count && prefix.indices.allSatisfy { i in
+            ((0x41...0x5A).contains(v[i]) ? v[i] + asciiCaseOffset : v[i]) == prefix[i]
+        }
+    }
+
+    /// URL object for an accepted string (the SDK takes a URL; Android passes the string as is). Tries the string,
+    /// then a percent-encoded copy (iOS 15/16 do not encode by themselves), then CoreFoundation's lenient parser,
+    /// so acceptance never depends on the iOS version.
+    static func url(_ s: String) -> URL? { URL(string: s) ?? encodedURL(s) }
+
+    /// The path taken when `URL(string:)` refuses the raw string (always the case for non-ASCII on iOS 15/16).
+    static func encodedURL(_ s: String) -> URL? {
+        let encoded = percentEncoded(s)
+        return URL(string: encoded) ?? URL(dataRepresentation: Data(encoded.utf8), relativeTo: nil, isAbsolute: true)
+    }
+
+    /// RFC 3986 unreserved + reserved characters stay; an existing `%XX` stays; everything else (non-ASCII bytes,
+    /// quote, angle brackets, backslash, caret, backtick, braces, pipe, a lone `%`) becomes `%XX` of its UTF-8 bytes.
+    private static let keep = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;=".utf8)
+
+    static func percentEncoded(_ s: String) -> String {
+        let bytes = Array(s.utf8)
+        var out = [UInt8]()
+        var i = 0
+        while i < bytes.count {
+            let b = bytes[i]
+            if b == UInt8(ascii: "%"), i + 2 < bytes.count, isHex(bytes[i + 1]), isHex(bytes[i + 2]) {
+                out += bytes[i...(i + 2)]
+                i += 3
+                continue
+            }
+            if keep.contains(b) { out.append(b) } else { out += Array(String(format: "%%%02X", b).utf8) }
+            i += 1
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    private static func isHex(_ b: UInt8) -> Bool {
+        (0x30...0x39).contains(b) || (0x41...0x46).contains(b) || (0x61...0x66).contains(b)
+    }
+}
+
 // MARK: - Args
 
 /// StandardMessageCodec argument map reader. Dart null inside a map arrives as NSNull.
@@ -101,6 +192,15 @@ struct Args {
         guard let v = value(key) else { return nil }
         guard let s = v as? String else { throw BridgeArgumentError(key: key, expected: "String", actual: Args.typeName(v)) }
         return s
+    }
+
+    /// http(s) web URL (missing/null -> nil). Rejected by `WebURLRule` -> INVALID_ARGUMENT (value never carried).
+    func optHttpURL(_ key: String) throws -> URL? {
+        guard let raw = try optString(key) else { return nil }
+        guard WebURLRule.accepts(raw), let url = WebURLRule.url(raw) else {
+            throw BridgeArgumentError(key: key, expected: WebURLRule.expected, actual: "not http(s) URL")
+        }
+        return url
     }
 
     /// Required string: missing, null or blank is rejected.

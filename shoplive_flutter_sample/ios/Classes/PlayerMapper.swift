@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import ShoplivePlayerSDK
 
-/// Dart wire map <-> Shoplive iOS player 3.0.2 types (design section 2.2-2.5). Pure functions.
+/// Dart wire map <-> Shoplive iOS player 3.0.3 types (design section 2.2-2.5). Pure functions.
 enum PlayerMapper {
     // MARK: wire tables (Dart enum.name, design section 2.4)
     static let playerState: [String: ShoplivePlayerState] = [
@@ -50,6 +50,8 @@ enum PlayerMapper {
         if let newType = try nonNullEnum(partial, "type", playerType), newType != currentType {
             // TODO(SDP-VERIFY): 요확인 - .preview/.default 프리셋의 실제 값(swiftinterface에 내용 없음) · 근거 DRAFT-flutter-sdk-302-ios/D-2 · 자동 통과 금지(실측)
             config = newType == "preview" ? .preview : .default
+            // SDK 3.0.3 adds ShoplivePlayerConfiguration.type; set it explicitly whatever the preset holds (SMV-1749).
+            config.type = newType == "preview" ? .preview : .live
             type = newType
         }
         if let pip = try partial.optArgs("pip") {
@@ -57,6 +59,9 @@ enum PlayerMapper {
             if let v = try nonNullBool(pip, "isOSPipEnabled") { config.pip.isOSPipEnabled = v }
             if let v = try nonNullEnum(pip, "defaultPosition", pipPosition) { config.pip.defaultPosition = v }
             if let v = try nonNullDouble(pip, "scale") { config.pip.scale = CGFloat(v) }
+            // SDK 3.0.3. Missing = keep the SDK value, key+null or non-Bool = INVALID_ARGUMENT (Android parity).
+            // SDK default is true (measured on iOS 18.4 simulator, SMV-1749).
+            if let v = try nonNullBool(pip, "isDragOutToCloseEnabled") { config.pip.isDragOutToCloseEnabled = v }
             if try nonNullEnum(pip, "aspectRatio", pipRatio) != nil {
                 bridgeLog("ShoplivePlayer", "configuration.pip.aspectRatio is not supported by the iOS SDK and is ignored")
             }
@@ -112,9 +117,8 @@ enum PlayerMapper {
                                    status: try a.requireWireEnum("status", resultStatus), alertType: try alert(a))
     }
 
-    /// The iOS result types require an alert type while the contract makes it optional (D-11): default toast.
+    /// The contract makes alertType optional (D-11): missing -> toast on both platforms (SMV-1749; the SDK 3.0.3 init default .alert is not used).
     private static func alert(_ a: Args) throws -> ShopliveResultAlertType {
-        // TODO(SDP-VERIFY): 요확인 - alertType 생략 시 iOS 기본값 toast가 Android SDK 기본 동작과 같은지 · 근거 DRAFT-flutter-sdk-302-ios/D-11 · 자동 통과 금지(실측)
         try a.optWireEnum("alertType", alertType) ?? .toast
     }
 
@@ -128,6 +132,7 @@ enum PlayerMapper {
                 "isOSPipEnabled": c.pip.isOSPipEnabled,
                 "defaultPosition": wireOf(c.pip.defaultPosition, pipPosition),
                 "scale": Double(c.pip.scale),
+                "isDragOutToCloseEnabled": c.pip.isDragOutToCloseEnabled,
                 "padding": ["left": Int(c.pip.padding.left), "top": Int(c.pip.padding.top),
                             "right": Int(c.pip.padding.right), "bottom": Int(c.pip.padding.bottom)],
             ] as [String: Any],

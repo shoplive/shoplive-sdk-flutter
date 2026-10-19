@@ -1,7 +1,7 @@
 import Foundation
 import ShopliveCore
 
-/// Dart wire map -> Shoplive iOS core 3.0.2 types (design section 2.1). Pure functions.
+/// Dart wire map -> Shoplive iOS core 3.0.3 types (design section 2.1). Pure functions.
 enum CoreMapper {
     static let genderByWire: [String: ShopliveGender] = [
         "male": .male, "female": .female, "neutral": .neutral, "undefined": .undefined,
@@ -11,7 +11,7 @@ enum CoreMapper {
         let accessKey = try args.requireString("accessKey")
         let domains = try args.optNonNullStringList("allowedWebViewDomains") ?? []
         let attribution = try args.optArgs("attribution").map(toAttribution)
-        // D-3: the iOS SDK has no appVersion. Validate the type, then ignore it.
+        // D-3: the iOS SDK has no appVersion (Android 3.0.3 dropped it too). Validate the type, then ignore it.
         if try args.optString("appVersion") != nil {
             bridgeLog("ShopliveCore", "initialize: appVersion is not supported by the iOS SDK and is ignored")
         }

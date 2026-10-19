@@ -89,6 +89,52 @@ final class ArgsTests: XCTestCase {
         XCTAssertEqual(try Args.of(["mode": "fill"]).requireWireEnum("mode", ["fill": 1]), 1)
     }
 
+    // SMV-1749 streamer webPageUrl: missing/null -> nil, non-String -> INVALID_ARGUMENT.
+    func testHttpURLOmittedNullWrongType() throws {
+        XCTAssertNil(try Args.of([String: Any]()).optHttpURL("u"))
+        XCTAssertNil(try Args.of(["u": NSNull()]).optHttpURL("u"))
+        XCTAssertThrowsError(try Args.of(["u": NSNumber(value: 1)]).optHttpURL("u")) { XCTAssertEqual(($0 as? BridgeArgumentError)?.key, "u") }
+    }
+
+    // SMV-1749 R1-01: same file and expectations as Android StreamerTest.webUrlRule_sharedVectors_matchIos (platform parity).
+    // The decision is the string rule only, so the result does not depend on the OS version running this test.
+    func testHttpURLSharedVectors() throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("shoplive_streamer/test/fixtures/http_url_vectors.json")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        let vectors = try XCTUnwrap(root["vectors"] as? [[String: Any]])
+        XCTAssertGreaterThanOrEqual(vectors.count, 50)
+        for v in vectors {
+            let input = try XCTUnwrap(v["input"] as? String)
+            let accept = try XCTUnwrap(v["accept"] as? Bool)
+            let args = try Args.of(["u": input])
+            if accept {
+                // Built URL keeps the original scheme and has a host (also on the iOS 15/16 path where raw URL(string:) is refused).
+                let scheme = String(input.prefix { $0 != ":" }).lowercased()
+                for url in [try args.optHttpURL("u"), WebURLRule.encodedURL(input)] {
+                    let u = try XCTUnwrap(url, input)
+                    XCTAssertEqual(u.scheme?.lowercased(), scheme, input)
+                    XCTAssertFalse((u.host ?? "").isEmpty, input)
+                }
+            } else {
+                XCTAssertThrowsError(try args.optHttpURL("u"), input) { error in
+                    XCTAssertEqual((error as? BridgeArgumentError)?.key, "u")
+                    XCTAssertTrue(input.trimmingCharacters(in: .whitespaces).isEmpty || !"\(error)".contains(input), input)
+                }
+            }
+        }
+    }
+
+    func testHttpURLKeepsValidURLAndEncodesForOldParsers() throws {
+        XCTAssertEqual(try Args.of(["u": "https://shop.example.com/p?id=1"]).optHttpURL("u")?.absoluteString, "https://shop.example.com/p?id=1")
+        // percent-encoding used when URL(string:) refuses the raw string (iOS 15/16): non-ASCII -> UTF-8 %XX, %XX kept, lone % encoded
+        XCTAssertEqual(WebURLRule.percentEncoded("https://shop.example.com/상품/1?a=%20&b=50%"),
+                       "https://shop.example.com/%EC%83%81%ED%92%88/1?a=%20&b=50%25")
+        XCTAssertEqual(WebURLRule.percentEncoded("https://e.com/a\\b|{x}"), "https://e.com/a%5Cb%7C%7Bx%7D")
+        XCTAssertNotNil(WebURLRule.url("https://example.com:abc/")) // CoreFoundation fallback: accepted like Android
+    }
+
     func testWireOfUnknown() {
         XCTAssertEqual(wireOf(1, ["fill": 1]), "fill")
         XCTAssertEqual(wireOf(2, ["fill": 1]), wireUnknown)

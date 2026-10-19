@@ -1,6 +1,6 @@
 name: shoplive_core
 description: Shoplive core plugin for Flutter (initialize, user, conversion) on Shoplive SDK 3.x. To use Shoplive, please contact ask@shoplive.cloud.
-version: 3.0.2
+version: 3.0.3
 homepage: https://github.com/shoplive/flutter-sdk-sample/tree/main/shoplive_core
 
 environment:

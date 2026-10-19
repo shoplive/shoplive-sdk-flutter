@@ -1,5 +1,5 @@
 name: shoplive_player_example
-description: Sample app that depends on the published shoplive_player / shoplive_streamer 3.0.2 from pub.dev.
+description: Sample app that depends on the published shoplive_player / shoplive_streamer 3.0.3 from pub.dev.
 version: 1.0.0
 
 # The following line prevents the package from being accidentally published to
@@ -19,9 +19,9 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Hosted packages from pub.dev (no path override) — verifies the published 3.0.2 release.
-  shoplive_player: 3.0.2
-  shoplive_streamer: 3.0.2
+  # Hosted packages from pub.dev (no path override) — verifies the published 3.0.3 release.
+  shoplive_player: 3.0.3
+  shoplive_streamer: 3.0.3
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

@@ -1,13 +1,13 @@
 package cloud.shoplive.shoplive_player
 
+import cloud.shoplive.core.publicsurface.ShopliveError
+import cloud.shoplive.core.publicsurface.ShopliveErrorCode
 import cloud.shoplive.player.ShopliveAnalyticsInfo
 import cloud.shoplive.player.ShopliveBrand
 import cloud.shoplive.player.ShopliveCampaign
 import cloud.shoplive.player.ShopliveCampaignInfo
 import cloud.shoplive.player.ShopliveCampaignStatus
 import cloud.shoplive.player.ShopliveConnectionState
-import cloud.shoplive.player.ShopliveError
-import cloud.shoplive.player.ShopliveErrorCode
 import cloud.shoplive.player.ShopliveNavigationAction
 import cloud.shoplive.player.ShopliveOverlayUIMode
 import cloud.shoplive.player.ShopliveInsets
@@ -28,12 +28,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
-
-/** player ShopliveError 생성자는 Kotlin internal(바이트코드상 public) — 테스트 전용 리플렉션 생성. */
-internal fun playerError(code: ShopliveErrorCode, message: String, rawCode: Int?, recoverable: Boolean): ShopliveError =
-    ShopliveError::class.java.getConstructor(
-        ShopliveErrorCode::class.java, String::class.java, Integer::class.java, Throwable::class.java, Boolean::class.javaPrimitiveType,
-    ).newInstance(code, message, rawCode, null, recoverable)
 
 class PlayerMapperTest {
 
@@ -209,11 +203,38 @@ class PlayerMapperTest {
         }
     }
 
+    @Test // case: SMV-1749 PIP isDragOutToCloseEnabled 생략/true/false/null/비Boolean
+    fun merge_pipDragOutToClose() {
+        val base = ShoplivePlayerConfiguration()
+        assertEquals(true, base.pip.isDragOutToCloseEnabled) // SDK 기본값 true(3.0.3) — 생략 시 이 값 유지
+        val off = PlayerMapper.mergeConfiguration(base, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to false))))
+        assertEquals(false, off.pip.isDragOutToCloseEnabled)
+        val kept = PlayerMapper.mergeConfiguration(off, Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true))))
+        assertEquals(false, kept.pip.isDragOutToCloseEnabled)
+        val on = PlayerMapper.mergeConfiguration(off, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to true))))
+        assertEquals(true, on.pip.isDragOutToCloseEnabled)
+        for (bad in listOf(null, "true", 1)) {
+            val e = assertThrows(BridgeArgumentException::class.java) {
+                PlayerMapper.mergeConfiguration(base, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to bad))))
+            }
+            assertEquals("isDragOutToCloseEnabled", e.key)
+        }
+        assertEquals(false, (PlayerMapper.configurationToWire(off)["pip"] as Map<*, *>)["isDragOutToCloseEnabled"])
+    }
+
+    @Test // case: SMV-1749 error code 불투명 문자열 그대로(3.0.3 신규 상수 포함), rawCode 상시
+    fun errorEvent_passesSdkCodeNameThrough() {
+        for (code in ShopliveErrorCode.values()) {
+            val wire = PlayerMapper.eventToWire(ShoplivePlayerEvent.Error(ShopliveError(code, 7, null, null, false)))
+            assertEquals(mapOf("code" to code.name, "message" to null, "rawCode" to 7, "recoverable" to false), wire["error"])
+        }
+    }
+
     @Test // case: CFG-02
     fun configuration_roundTrip_wire() {
         val merged = PlayerMapper.mergeConfiguration(
             ShoplivePlayerConfiguration(),
-            Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true, "padding" to mapOf("left" to 5)), "customParameters" to mapOf("a" to "b"))),
+            Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true, "isDragOutToCloseEnabled" to false, "padding" to mapOf("left" to 5)), "customParameters" to mapOf("a" to "b"))),
         )
         val wire = PlayerMapper.configurationToWire(merged)
         val again = PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(wire))
@@ -232,11 +253,26 @@ class PlayerMapperTest {
         assertEquals(true, r.success)
         assertEquals(ShopliveResultStatus.SHOW, r.status)
         assertNull(r.message)
-        assertNull(r.alertType)
+        assertEquals(ShopliveResultAlertType.TOAST, r.alertType) // 생략 = TOAST(iOS와 동일, SMV-1749)
         val full = PlayerMapper.toCustomActionResult("a1", Args.of(mapOf("success" to false, "status" to "hide", "message" to "m", "alertType" to "alert")))
         assertEquals("a1", full.id)
         assertEquals("m", full.message)
         assertEquals(ShopliveResultAlertType.ALERT, full.alertType)
+    }
+
+    @Test
+    fun resultAlertType_omittedIsToast_invalidRejected() {
+        // SMV-1749: 생략만 TOAST(iOS와 동일). 키+null·미지 값은 TOAST로 삼키지 않고 거부한다.
+        val base = mapOf("success" to true, "status" to "hide")
+        val coupon = { m: Map<String, Any?> -> PlayerMapper.toCouponResult("c", Args.of(base + m)).alertType }
+        val custom = { m: Map<String, Any?> -> PlayerMapper.toCustomActionResult("a", Args.of(base + m)).alertType }
+        for (build in listOf(coupon, custom)) {
+            assertEquals(ShopliveResultAlertType.TOAST, build(emptyMap()))
+            assertEquals(ShopliveResultAlertType.TOAST, build(mapOf("alertType" to "toast")))
+            assertEquals(ShopliveResultAlertType.ALERT, build(mapOf("alertType" to "alert")))
+            assertThrows(BridgeArgumentException::class.java) { build(mapOf("alertType" to null)) }
+            assertThrows(BridgeArgumentException::class.java) { build(mapOf("alertType" to "banner")) }
+        }
     }
 
     @Test // case: N-06
@@ -257,8 +293,8 @@ class PlayerMapperTest {
         )
         assertEquals(mapOf("type" to "connectionStateChanged", "state" to "reconnecting"), PlayerMapper.eventToWire(ShoplivePlayerEvent.ConnectionStateChanged(ShopliveConnectionState.RECONNECTING)))
         assertEquals(
-            mapOf("type" to "error", "error" to mapOf("code" to "CONNECTION_ISSUE", "message" to "m", "rawCode" to null, "recoverable" to true)),
-            PlayerMapper.eventToWire(ShoplivePlayerEvent.Error(playerError(ShopliveErrorCode.CONNECTION_ISSUE, "m", null, true))),
+            mapOf("type" to "error", "error" to mapOf("code" to "CONNECTION_ISSUE", "message" to "m", "rawCode" to 3001, "recoverable" to true)),
+            PlayerMapper.eventToWire(ShoplivePlayerEvent.Error(ShopliveError(ShopliveErrorCode.CONNECTION_ISSUE, 3001, "m", null, true))),
         )
         assertEquals(
             mapOf(

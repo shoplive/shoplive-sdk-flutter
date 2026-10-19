@@ -23,10 +23,17 @@ class ShopliveStreamer {
 
   /// 방송 키로 방송 화면을 연다. 호출마다 새 방송 세션을 만든다(ST-01).
   ///
+  /// [webPageUrl]: 방송 화면에서 스와이프로 여는 웹페이지(SDK 3.0.3+, Android·iOS). null이면 웹페이지 없음(3.0.2와 같음).
+  /// `http://`·`https://`로 시작(대소문자 무관)하고, userinfo·포트를 뺀 호스트가 비어 있지 않고, authority에 역슬래시가 없으며,
+  /// 공백·제어문자가 없어야 한다 — 그 외는
+  /// `PlatformException(INVALID_ARGUMENT)`. 그 밖의 검사는 SDK에 맡긴다(Android·iOS 같은 규칙).
+  ///
   /// Call `Shoplive.setStreamToken` with the broadcaster token first. Without it the server returns no ingest
   /// address and the broadcast screen shows a "failed to start" retry dialog.
-  Future<void> start(String campaignKey) =>
-      _platform.invokeMethod<void>(ShopliveStreamerContract.start, {'campaignKey': campaignKey});
+  Future<void> start(String campaignKey, {String? webPageUrl}) => _platform.invokeMethod<void>(
+        ShopliveStreamerContract.start,
+        {'campaignKey': campaignKey, if (webPageUrl != null) 'webPageUrl': webPageUrl},
+      );
 
   /// 마지막 방송 세션의 상태. 세션이 없으면 idle.
   Future<ShopliveBroadcastState> getState() async {
@@ -77,7 +84,7 @@ class ShopliveStreamerStateChanged extends ShopliveStreamerEvent {
   const ShopliveStreamerStateChanged({required this.state, this.isRehearsal});
   final ShopliveBroadcastState state;
 
-  /// 리허설 방송 여부. 플랫폼이 제공하지 않으면 null(iOS SDK 3.0.2는 제공하지 않음).
+  /// 리허설 방송 여부. 플랫폼이 제공하지 않으면 null(iOS SDK 3.0.3은 제공하지 않음).
   final bool? isRehearsal;
 }
 

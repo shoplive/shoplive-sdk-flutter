@@ -1,6 +1,5 @@
 package cloud.shoplive.shoplive_streamer
 
-import cloud.shoplive.core.publicsurface.ShopliveError
 import cloud.shoplive.streamer.ShopliveBroadcastState
 import cloud.shoplive.streamer.ShopliveStreamerEvent
 
@@ -14,9 +13,10 @@ internal object StreamerContract {
     val METHODS = listOf(START, GET_STATE)
 
     const val CAMPAIGN_KEY = "campaignKey"
+    const val WEB_PAGE_URL = "webPageUrl"
 }
 
-/** Shoplive streamer 3.0.2 타입 → wire (순수 함수). */
+/** Shoplive streamer 3.0.3 타입 → wire (순수 함수). */
 internal object StreamerMapper {
 
     /** wire(Dart ShopliveBroadcastState.name) ↔ SDK 상수(design §2.3). */
@@ -32,13 +32,9 @@ internal object StreamerMapper {
     fun eventToWire(event: ShopliveStreamerEvent): Map<String, Any?> = when (event) {
         is ShopliveStreamerEvent.StateChanged ->
             mapOf(TYPE to "stateChanged", "state" to wireOf(event.state, BROADCAST_STATE), "isRehearsal" to event.isRehearsal)
-        is ShopliveStreamerEvent.Error -> mapOf(TYPE to "error", "error" to errorToWire(event.error))
+        is ShopliveStreamerEvent.Error -> mapOf(TYPE to "error", "error" to Bridge.errorToWire(event.error))
         else -> mapOf(TYPE to WIRE_UNKNOWN, "rawType" to event.javaClass.simpleName.replaceFirstChar { it.lowercase() })
     }
-
-    /** Streamer Error는 core ShopliveError(Exception, message nullable, rawCode int — design §0 S9). */
-    private fun errorToWire(e: ShopliveError): Map<String, Any?> =
-        mapOf("code" to e.code.name, "message" to e.message, "rawCode" to e.rawCode, "recoverable" to e.isRecoverable)
 
     private const val TYPE = EventEmitter.KEY_TYPE
 }

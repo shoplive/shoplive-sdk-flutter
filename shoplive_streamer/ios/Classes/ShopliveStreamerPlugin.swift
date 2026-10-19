@@ -43,7 +43,9 @@ final class StreamerMethodHandler {
     func handle(_ method: String, _ args: Args) throws -> Any? {
         switch method {
         case "start":
-            try start(try args.requireString("campaignKey"))
+            let campaignKey = try args.requireString("campaignKey")
+            // SDK 3.0.3 webPageURL: missing/null = no web page (3.0.2 behavior). Validated before any controller is created.
+            try start(campaignKey, webPageURL: try args.optHttpURL("webPageUrl"))
             return nil
         case "getState":
             return wireOf(controller?.state ?? lastState ?? .idle, StreamerMapper.broadcastState)
@@ -52,8 +54,10 @@ final class StreamerMethodHandler {
         }
     }
 
-    private func start(_ campaignKey: String) throws {
-        let next = ShopliveStreamerViewController(campaignKey: campaignKey)
+    private func start(_ campaignKey: String, webPageURL: URL?) throws {
+        // No URL keeps the exact 3.0.2 call (convenience init) - the designated init's nil semantics are not in the interface.
+        let next = webPageURL.map { ShopliveStreamerViewController(campaignKey: campaignKey, webPageURL: $0) }
+            ?? ShopliveStreamerViewController(campaignKey: campaignKey)
         let delegate = makeDelegate()
         next.streamerDelegate = delegate
         let previous = controller

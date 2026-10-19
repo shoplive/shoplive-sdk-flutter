@@ -9,7 +9,7 @@ import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-/** Shoplive core 3.0.2 호출 경계(테스트에서 대체). */
+/** Shoplive core 3.0.3 호출 경계(테스트에서 대체). */
 internal interface CoreSdk {
     fun initialize(configuration: ShopliveConfiguration)
     fun setUser(user: ShopliveUser)

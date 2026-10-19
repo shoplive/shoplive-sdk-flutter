@@ -16,7 +16,8 @@ import io.flutter.plugin.common.MethodChannel
 internal interface StreamerPort {
     var delegate: ShopliveStreamerDelegate?
     val state: ShopliveBroadcastState
-    fun start(campaignKey: String)
+    /** [webPageUrl] null = 웹페이지 없음(SDK 기본, 3.0.2 동작). */
+    fun start(campaignKey: String, webPageUrl: String?)
 }
 
 internal class SdkStreamerPort(private val streamer: ShopliveStreamer) : StreamerPort {
@@ -24,7 +25,9 @@ internal class SdkStreamerPort(private val streamer: ShopliveStreamer) : Streame
         get() = streamer.streamerDelegate
         set(value) { streamer.streamerDelegate = value }
     override val state: ShopliveBroadcastState get() = streamer.state
-    override fun start(campaignKey: String) = streamer.start(campaignKey)
+    // URL이 없으면 3.0.2와 같은 호출 그대로(SDK 기본값 경로)
+    override fun start(campaignKey: String, webPageUrl: String?) =
+        if (webPageUrl == null) streamer.start(campaignKey) else streamer.start(campaignKey, webPageUrl = webPageUrl)
 }
 
 /** 살아 있는 엔진용 delegate. 세대가 바뀌었으면(엔진 detach 이후) 드롭(pair #13). SDK는 메인으로 전달(S7), 방어적으로 hop. */
@@ -95,12 +98,14 @@ internal class StreamerMethodHandler<H : Any>(
     private fun start(args: Args): Any? {
         val currentHost = host ?: throw BridgeStateException(BridgeErrorCode.NO_HOST_SCREEN, "no host screen (Activity) attached")
         val campaignKey = args.requireString(StreamerContract.CAMPAIGN_KEY)
+        // SDK 3.0.3 webPageUrl: 생략·null = 웹페이지 없음(3.0.2 동작). 인자 검증을 인스턴스 생성·이전 세션 해제보다 먼저
+        val webPageUrl = args.optHttpUrl(StreamerContract.WEB_PAGE_URL)
         // TODO(SDP-VERIFY): 요확인 — 이전 인스턴스가 진행 중(LIVE 등)일 때 새 start의 SDK 동작과, 이전 인스턴스 delegate 해제로 그 ENDED/Error 이벤트가 Dart에 오지 않는 문제(R2-m6) · 근거 DRAFT-flutter-sdk-302-android/ST-01 · 자동 통과 금지(실측)
         release()
         val p = portFactory(currentHost)
         p.delegate = liveDelegate()
         port = p
-        p.start(campaignKey)
+        p.start(campaignKey, webPageUrl)
         return null
     }
 

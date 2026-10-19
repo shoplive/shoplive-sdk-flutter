@@ -1,6 +1,6 @@
 # Shoplive SDK for Flutter
 
-Flutter plugins and sample app for Shoplive SDK **3.0.2** (Android and iOS).
+Flutter plugins and sample app for Shoplive SDK **3.0.3** (Android and iOS).
 
 - Integration guide: https://developer.shoplive.cloud/mobile
 - To use Shoplive, contact ask@shoplive.cloud.
@@ -31,14 +31,14 @@ Add only the package you need. An app that only plays videos adds `shoplive_play
 
 ```yaml
 dependencies:
-  shoplive_player: 3.0.2     # player, includes shoplive_core
-  # shoplive_streamer: 3.0.2 # broadcast, includes shoplive_core
+  shoplive_player: 3.0.3     # player, includes shoplive_core
+  # shoplive_streamer: 3.0.3 # broadcast, includes shoplive_core
 ```
 
 Then do the platform setup:
 
 - **Android:** The plugins add the Shoplive Maven repository (`https://sdk.shoplive.cloud/maven-repo`) for you. If your project declares the repository itself, follow "Android: Maven repository setup" in the package README.
-- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.2 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
+- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.3 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
 
 ## Quick start
 
@@ -57,7 +57,7 @@ For configuration, events, coupon and custom-action requests, PIP, error codes a
 
 ## Migrating from 1.x
 
-3.0.2 is a rewrite. The 1.x Dart API, the Shortform API and `ShopLiveCommon` are removed. Class names change from `ShopLive*` to `Shoplive*`, and every method returns a `Future` that throws `PlatformException`.
+3.x (since 3.0.2) is a rewrite. The 1.x Dart API, the Shortform API and `ShopLiveCommon` are removed. Class names change from `ShopLive*` to `Shoplive*`, and every method returns a `Future` that throws `PlatformException`.
 
 - Use the migration table in the [`shoplive_player` README](shoplive_flutter_sample/README.md#migrating-from-1x).
 - Run `flutter clean` once after you upgrade. Stale 1.x iOS build products otherwise cause "'ShoplivePlayerPlugin' has different definitions in different modules".

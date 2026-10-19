@@ -1,3 +1,19 @@
+## 3.0.3
+
+Built on Shoplive SDK 3.0.3 (Android `cloud.shoplive:shoplive-player-sdk:3.0.3`, iOS `ShoplivePlayerSDK` 3.0.3). Depends on `shoplive_core` 3.0.3. No Dart breaking change.
+
+### Added
+* `ShoplivePipOptions.isDragOutToCloseEnabled`: whether the in-app PIP window closes when dragged off the screen (Android and iOS). Omitted keeps the current value (the SDK default is `true` on both platforms); `getConfiguration()` returns it.
+
+### Fixed
+* `start` while a session is open (or after `close`) now opens a new player with the configuration of that call. Before, Android reused the started SDK player, which ignores new settings (for example, a `live` start after an in-app PIP `preview` session opened as a preview with a black screen). iOS used to switch campaigns in the same controller; it now closes it and presents a new one, the same as Android. Use `play` to switch campaigns while keeping the current settings.
+
+### Changed
+* `ShoplivePlayerType.preview` on iOS also sets the SDK 3.0.3 `ShoplivePlayerConfiguration.type`, in addition to selecting the `.preview` preset.
+* Error events: `rawCode` is now always set on iOS too. Android player errors use the SDK 3.0.3 shared error type (`cloud.shoplive.core`). Every 3.0.2 player error code name still exists there, and the event keys (`code`, `message`, `rawCode`, `recoverable`) are unchanged. SDK 3.0.3 adds new codes, so keep treating `code` as an opaque string.
+* Coupon / custom-action results: an omitted `alertType` now means `toast` on both platforms. iOS already did this; Android used to pass no value (the web default). SDK 3.0.3 changed its own initializer default to `alert`; the plugin does not use it. The fallback result is unchanged (`success: false, status: keep, alertType: toast`).
+* iOS: downloads `ShoplivePlayerSDK` 3.0.3 and verifies the new sha256.
+
 ## 3.0.2
 
 Rewrite on Shoplive Android SDK 3.0.2 (`cloud.shoplive:shoplive-player-sdk:3.0.2`).

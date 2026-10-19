@@ -38,6 +38,14 @@ void main() {
     expect(calls.single.arguments, {'campaignKey': 'k'});
   });
 
+  // case: SMV-1749 webPageUrl — null이면 키 생략(3.0.2 와이어 그대로), 값은 그대로 전달(검증은 네이티브)
+  test('start webPageUrl omitted / given', () async {
+    await ShopliveStreamer.instance.start('k', webPageUrl: null);
+    await ShopliveStreamer.instance.start('k', webPageUrl: 'https://shop.example.com');
+    expect(calls[0].arguments, {'campaignKey': 'k'});
+    expect(calls[1].arguments, {'campaignKey': 'k', 'webPageUrl': 'https://shop.example.com'});
+  });
+
   // case: B-02
   test('getState parses wire and unknown', () async {
     responder = (_) => 'reconnecting';

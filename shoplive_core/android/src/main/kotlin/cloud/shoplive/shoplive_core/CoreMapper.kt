@@ -225,7 +225,7 @@ internal class Args private constructor(private val map: Map<*, *>) {
 }
 
 // =====================================================================================
-// CoreMapper — Dart wire Map → Shoplive core 3.0.2 타입 (순수 함수, design.md rev2 §2.4·§2.6)
+// CoreMapper — Dart wire Map → Shoplive core 3.0.3 타입 (순수 함수, design.md rev2 §2.4·§2.6)
 // =====================================================================================
 
 /** 채널 `shoplive_core` 메서드명·인자 키(계약 단일 출처 — CoreContractTest가 목록을 고정). */
@@ -272,6 +272,7 @@ internal object CoreContract {
 
 internal object CoreMapper {
     private val K = CoreContract
+    private const val TAG = "ShopliveCore"
 
     /** wire(Dart ShopliveGender.name) → SDK 상수(design.md rev2 §2.3). */
     val GENDER_BY_WIRE: Map<String, ShopliveGender> = mapOf(
@@ -283,10 +284,14 @@ internal object CoreMapper {
 
     fun toConfiguration(args: Args): ShopliveConfiguration = Bridge.constructing(K.ACCESS_KEY) {
         val base = ShopliveConfiguration(accessKey = args.requireString(K.ACCESS_KEY))
+        // D-3: SDK 3.0.3에서 ShopliveConfiguration.appVersion 제거(SDK가 앱 버전을 직접 읽음) — iOS와 같이 타입만 검증하고 무시.
+        // 3.0.2 Dart API 호환을 위해 키는 계속 받는다(비String → INVALID_ARGUMENT) · 근거 SMV-1749
+        if (args.optString(K.APP_VERSION) != null) {
+            Log.w(TAG, "initialize: appVersion is not supported by the Android SDK 3.0.3 and is ignored")
+        }
         base.copy(
             allowedWebViewDomains = args.optNonNullStringList(K.DOMAINS) ?: base.allowedWebViewDomains,
             attribution = args.optArgs(K.ATTRIBUTION)?.let(::toAttribution) ?: base.attribution,
-            appVersion = args.optString(K.APP_VERSION) ?: base.appVersion,
         )
     }
 

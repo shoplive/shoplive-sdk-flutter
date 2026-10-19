@@ -1,4 +1,4 @@
-/// Shoplive 공통(core) Flutter 플러그인 — Android SDK 3.0.2 `cloud.shoplive:shoplive-core`.
+/// Shoplive 공통(core) Flutter 플러그인 — Android SDK 3.0.3 `cloud.shoplive:shoplive-core`.
 ///
 /// 채널 계약: design.md rev2 §2.4 (DRAFT-flutter-sdk-302-android).
 /// 공개 API만 export한다. `src/wire_enum.dart`와 MethodChannel 구현은 내부용이다

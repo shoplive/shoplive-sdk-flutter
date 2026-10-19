@@ -1,3 +1,14 @@
+## 3.0.3
+
+Built on Shoplive SDK 3.0.3 (Android `cloud.shoplive:shoplive-core:3.0.3`, iOS `ShopliveCore` 3.0.3). No Dart breaking change.
+
+### Changed
+* `ShopliveConfiguration.appVersion` is deprecated and ignored on both platforms: SDK 3.0.3 reads the app version itself (Android removed the field). The value is still type-checked (`INVALID_ARGUMENT` if not a string) and a warning is logged.
+* Error `code` strings are the SDK 3.0.3 constant names, passed through unchanged. Android 3.0.3 removed `NOT_INITIALIZED_CONFIG` and `NOT_INITIALIZED_CAMPAIGN_KEY` and added new codes (for example `AUTHENTICATION_FAILED` and `PIP_*`); treat `code` as an opaque string.
+* `ShopliveError.rawCode` is set on both platforms (iOS SDK 3.0.3 now provides it for every code).
+* Android: the `exclusiveContent` guard for the `cloud.shoplive` group stays; SDK 3.0.3 is not on Maven Central, and the `shoplive-media3` conflict of 3.0.2 no longer applies. The `constraintlayout:2.2.1` pin is unchanged.
+* iOS: downloads the SDK 3.0.3 XCFrameworks (`ShopliveCore`, `ShopLiveWebRTCHelperSDK`, `WebRTC`) and verifies the new sha256 values.
+
 ## 3.0.2
 
 * Declares `androidx.constraintlayout:constraintlayout:2.2.1`. The SDK pulls `2.0.1` through `material:1.9.0`, whose solver throws `ClassCastException` during the in-app PIP transition; Gradle now resolves the fixed version.

@@ -10,6 +10,7 @@ import cloud.shoplive.player.ShoplivePlayerConfiguration
 import cloud.shoplive.player.ShoplivePlayerDelegate
 import cloud.shoplive.player.ShoplivePlayerPresentationStyle
 import cloud.shoplive.player.ShoplivePlayerState
+import cloud.shoplive.player.ShoplivePlayerType
 import cloud.shoplive.player.ShopliveResizeMode
 import cloud.shoplive.player.ShopliveResultStatus
 import org.junit.Assert.assertEquals
@@ -21,6 +22,8 @@ import org.junit.Test
 
 internal class FakePort(var running: Boolean = false) : PlayerPort {
     val calls = mutableListOf<String>()
+    /** SDK 3.0.3 모델: 생성 시에만 IDLE, start 이후 실행 중이 아니면 CLOSED(되돌아가지 않음). */
+    var started = running
     var lastOptions: ShoplivePlayOptions? = null
     var startedWithConfiguration: ShoplivePlayerConfiguration? = null
     var campaign: ShopliveCampaignInfo? = null
@@ -36,14 +39,23 @@ internal class FakePort(var running: Boolean = false) : PlayerPort {
     override var overlayUI: ShopliveOverlayUIMode = ShopliveOverlayUIMode.BUILT_IN
         set(value) { calls += "setOverlayUI"; field = value }
     override val isInPictureInPicture: Boolean get() = false
-    override val state: ShoplivePlayerState get() = if (running) ShoplivePlayerState.PLAYING else ShoplivePlayerState.IDLE
+    override val state: ShoplivePlayerState get() = when {
+        running -> ShoplivePlayerState.PLAYING
+        started -> ShoplivePlayerState.CLOSED
+        else -> ShoplivePlayerState.IDLE
+    }
     override val currentCampaign: ShopliveCampaignInfo? get() = campaign
 
-    override fun start(campaignKey: String, options: ShoplivePlayOptions) { calls += "start2"; lastOptions = options; running = true }
-    override fun start(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration) {
-        calls += "start3"; lastOptions = options; startedWithConfiguration = configuration; this.configuration = configuration; calls.remove("setConfiguration"); running = true
+    var startFailure: RuntimeException? = null
+    override fun start(campaignKey: String, options: ShoplivePlayOptions) {
+        startFailure?.let { throw it }
+        calls += "start2"; lastOptions = options; running = true; started = true
     }
-    override fun close() { calls += "close"; running = false }
+    override fun start(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration) {
+        calls += "start3"; lastOptions = options; startedWithConfiguration = configuration; this.configuration = configuration; calls.remove("setConfiguration"); running = true; started = true
+    }
+    var onClose: (() -> Unit)? = null
+    override fun close() { onClose?.invoke(); calls += "close"; running = false }
     override fun play(campaignKey: String, options: ShoplivePlayOptions) { calls += "play" }
     override fun stop() { calls += "stop" }
     override fun reload() { calls += "reload" }
@@ -57,14 +69,16 @@ class PlayerMethodHandlerTest {
     private val scheduler = FakeScheduler()
     private val registry = PendingRequestRegistry(scheduler)
     private val created = mutableListOf<Pair<String, FakePort>>()
+    private val liveEvents = mutableListOf<cloud.shoplive.player.ShoplivePlayerEvent>()
     private val liveDelegate = object : ShoplivePlayerDelegate {
-        override fun onEvent(sender: cloud.shoplive.player.ShoplivePlayerControlling, event: cloud.shoplive.player.ShoplivePlayerEvent) {}
+        override fun onEvent(sender: cloud.shoplive.player.ShoplivePlayerControlling, event: cloud.shoplive.player.ShoplivePlayerEvent) { liveEvents += event }
         override fun onRequest(sender: cloud.shoplive.player.ShoplivePlayerControlling, request: cloud.shoplive.player.ShoplivePlayerRequest) {}
     }
     private var nextRunning = false
+    private var nextFailure: RuntimeException? = null
     private val handler = PlayerMethodHandler<String>(
         registry = registry,
-        portFactory = { host -> FakePort(nextRunning).also { created += host to it } },
+        portFactory = { host -> FakePort(nextRunning).also { it.startFailure = nextFailure; created += host to it } },
         liveDelegate = { liveDelegate },
     )
 
@@ -275,14 +289,132 @@ class PlayerMethodHandlerTest {
         assertSame(DetachedDelegate, old.delegate)
     }
 
-    @Test // case: T-01, T-04
-    fun cfg03_runningInstance_isKeptOnHostChange() {
+    @Test // case: T-04, SMV-1749 — 실행 중 Activity가 바뀌어도 새 start는 현재 Activity의 새 인스턴스로
+    fun runningInstance_hostChange_startRetiresAndRecreatesOnNewHost() {
         handler.attachHost("A1")
         call("start", mapOf("campaignKey" to "k"))
+        val old = port()
         handler.attachHost("A2")
         call("start", mapOf("campaignKey" to "k"))
-        // 실행 중 재start·Activity 변경은 T-01/T-04 요확인 — 기본 동작은 유지
+        assertEquals(2, created.size)
+        assertEquals("A2", created.last().first)
+        assertEquals(listOf("start2", "close"), old.calls)
+        assertSame(DetachedDelegate, old.delegate)
+    }
+
+    @Test // case: SMV-1749 T-01 — preview(PIP)로 실행 중 live로 start: 새 인스턴스에 live 설정이 실리고 이전 인스턴스는 해제 후 close
+    fun runningPreview_thenLiveStart_newPortGetsLiveConfiguration() {
+        handler.attachHost("A1")
+        call(
+            "start",
+            mapOf(
+                "campaignKey" to "k1",
+                "playOptions" to mapOf("presentationStyle" to "pip"),
+                "configuration" to mapOf("type" to "preview", "pip" to mapOf("isInAppPipEnabled" to true)),
+            ),
+        )
+        val preview = port()
+        assertEquals(ShoplivePlayerType.PREVIEW, preview.startedWithConfiguration!!.type)
+        var delegateAtClose: ShoplivePlayerDelegate? = null
+        preview.onClose = { delegateAtClose = preview.delegate }
+        liveEvents.clear()
+        call("start", mapOf("campaignKey" to "k2", "configuration" to mapOf("type" to "live")))
+        // R5-02: 교체 성공 경로에서는 (가짜) closed를 보내지 않는다 — 이전 세션 이벤트는 DetachedDelegate로 차단
+        assertEquals(emptyList<Any>(), liveEvents.filter { it == cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.CLOSED) })
+        val live = port()
+        assertEquals(2, created.size)
+        // create가 보관 설정을 먼저 넣고(IDLE이라 SDK가 받음) effective로 3인자 start 1회
+        assertEquals(listOf("start3"), live.calls.filter { it.startsWith("start") || it == "close" })
+        assertEquals(ShoplivePlayerType.LIVE, live.startedWithConfiguration!!.type)
+        assertEquals(true, live.startedWithConfiguration!!.pip.isInAppPipEnabled) // 보관값 + partial 병합
+        assertSame(liveDelegate, live.delegate)
+        assertEquals(listOf("start3", "close"), preview.calls)
+        assertSame(DetachedDelegate, delegateAtClose) // close 전에 DetachedDelegate(이전 세션 이벤트 차단)
+        assertSame(DetachedDelegate, preview.delegate)
+        assertEquals("live", (call("getConfiguration") as Map<*, *>)["type"])
+    }
+
+    @Test // case: SMV-1749 R4-03(a) — 실행 중 세션이 있을 때 검증 단계(B-09·빈 키·호스트 없음)에서 start가 실패하면 이전 세션은 그대로
+    fun runningSession_failedStartValidation_keepsPreviousSession() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        val old = port()
+        assertThrows(BridgeArgumentException::class.java) {
+            call("start", mapOf("campaignKey" to "k2", "playOptions" to mapOf("presentationStyle" to "pip"), "configuration" to mapOf("pip" to mapOf("isInAppPipEnabled" to false))))
+        }
+        assertThrows(BridgeArgumentException::class.java) { call("start", mapOf("campaignKey" to " ")) }
+        handler.detachHost() // 실행 중이라 인스턴스는 유지, 호스트만 없음
+        assertEquals(BridgeErrorCode.NO_HOST_SCREEN, stateCode { call("start", mapOf("campaignKey" to "k3")) })
         assertEquals(1, created.size)
+        assertEquals(listOf("start2"), old.calls)
+        assertSame(liveDelegate, old.delegate)
+        assertEquals("playing", call("getState"))
+    }
+
+    @Test // case: SMV-1749 R4-03(b) — 교체 경로에서도 보관 resizeMode·overlayUI·설정이 새 인스턴스로 이관
+    fun retirePath_carriesSavedSettingsToNewPort() {
+        handler.attachHost("A1")
+        configureEverything()
+        call("start", mapOf("campaignKey" to "k"))
+        call("start", mapOf("campaignKey" to "k2"))
+        assertEquals(2, created.size)
+        assertSettingsCarried(port())
+    }
+
+    @Test // case: SMV-1749 R4-03(c) — 교체되는 세션의 대기 쿠폰·커스텀 요청은 폴백으로 정확히 1회, 이후 Dart respond는 false
+    fun retirePath_flushesPendingRequestsOfPreviousSessionOnce() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        val coupons = mutableListOf<ShopliveCouponResult>()
+        val actions = mutableListOf<ShopliveCustomActionResult>()
+        val couponId = registry.register(PendingRequest.Coupon("c1") { coupons += it })
+        val actionId = registry.register(PendingRequest.CustomAction("a1") { actions += it })
+        call("start", mapOf("campaignKey" to "k2"))
+        assertEquals(1, coupons.size)
+        assertEquals(ShopliveResultStatus.KEEP, coupons.single().status)
+        assertEquals(1, actions.size)
+        assertEquals(false, call("respondCoupon", mapOf("requestId" to couponId, "success" to true, "status" to "hide")))
+        assertEquals(false, call("respondCustomAction", mapOf("requestId" to actionId, "success" to true, "status" to "hide")))
+        assertEquals(0, scheduler.pendingTimers()) // 타임아웃 타이머도 취소됨
+        scheduler.advance(200_000)
+        assertEquals(1, coupons.size)
+        assertEquals(1, actions.size)
+    }
+
+    @Test // case: SMV-1749 R4-02 — 이전 세션을 닫은 뒤 새 세션 start가 예외로 실패하면 Dart에 closed 1회(상태가 낡지 않게)
+    fun replacementStartFailure_emitsClosedOnce_andPropagates() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        liveEvents.clear()
+        nextFailure = IllegalStateException("sdk")
+        assertThrows(IllegalStateException::class.java) { call("start", mapOf("campaignKey" to "k2")) }
+        assertEquals(listOf(cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.CLOSED)), liveEvents)
+        // 교체할 세션이 없던 첫 start 실패는 closed를 보내지 않는다
+        val fresh = PlayerMethodHandler<String>(registry, { FakePort().also { it.startFailure = IllegalStateException("sdk") } }, { liveDelegate })
+        liveEvents.clear()
+        fresh.attachHost("A1")
+        assertThrows(IllegalStateException::class.java) { fresh.handle("start", Args.of(mapOf("campaignKey" to "k"))) }
+        assertEquals(emptyList<Any>(), liveEvents)
+    }
+
+    @Test // case: SMV-1749 R4-04 — getConfiguration은 다음 start에 쓰일 설정(실행 중 SET은 SDK가 무시해도 보관값 반환)
+    fun getConfiguration_whileRunning_returnsSettingsForNextStart() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k", "configuration" to mapOf("type" to "preview")))
+        call("setConfiguration", mapOf("configuration" to mapOf("type" to "live")))
+        assertEquals("live", (call("getConfiguration") as Map<*, *>)["type"])
+    }
+
+    @Test // case: SMV-1749 — close 후 같은 호스트에서 다시 start해도 CLOSED 인스턴스를 재사용하지 않는다(SDK가 설정을 거부)
+    fun closedInstance_sameHost_startCreatesNewPort() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k", "configuration" to mapOf("type" to "preview")))
+        val first = port()
+        call("close")
+        call("start", mapOf("campaignKey" to "k", "configuration" to mapOf("type" to "live")))
+        assertEquals(2, created.size)
+        assertEquals(listOf("start3", "close"), first.calls) // CLOSED라 close를 다시 부르지 않는다
+        assertEquals(ShoplivePlayerType.LIVE, port().startedWithConfiguration!!.type)
     }
 
     @Test // case: CFG-03, R-04
