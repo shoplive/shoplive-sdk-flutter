@@ -1,8 +1,8 @@
 group = "cloud.shoplive.shoplive_streamer"
-version = "3.0.2"
+version = "3.0.3"
 
 buildscript {
-    // 버전 정합: Kotlin 1.9.25 = shoplive-*-3.0.2 POM의 kotlin-stdlib 버전 (DRAFT-flutter-sdk-302-android S11)
+    // 버전 정합: Kotlin 1.9.25 = shoplive-*-3.0.3 POM의 kotlin-stdlib 버전 (DRAFT-flutter-sdk-302-android S11, SMV-1749 재확인)
     ext.kotlin_version = "1.9.25"
     repositories {
         google()
@@ -14,10 +14,10 @@ buildscript {
     }
 }
 
-// cloud.shoplive 그룹은 Shoplive 저장소에서만 받는다: Maven Central에 같은 좌표·다른 내용의 artifact가 있음
-// (예: shoplive-media3:1.10.1.2 — Central판에는 player-sdk 3.0.2가 참조하는 ShopLiveHlsPlayerFactory가 없음, sha256 52a464c0… vs 728bfeb8…).
+// cloud.shoplive 그룹은 Shoplive 저장소에서만 받는다: SDK 3.0.3 artifact는 Maven Central에 없다(sdk.shoplive.cloud만 제공 — SMV-1749 확인).
+// 3.0.2의 shoplive-media3 좌표 충돌(Central판 1.10.1.2와 내용 불일치)은 3.0.3에서 사라졌다 — player-sdk 3.0.3은 androidx.media3를 직접 의존.
+// 가드는 이제 cloud.shoplive 그룹을 Shoplive 저장소로 고정하는 역할만 한다(Central에 같은 그룹 좌표가 다시 생겨도 섞이지 않게).
 // exclusiveContent는 같은 그룹에 한 번만 선언해야 하므로(중복 시 해석 실패) 3개 플러그인·호스트 앱 중 먼저 선언한 쪽만 적용한다.
-// TODO(SDP-VERIFY): 3.0.4에서 shoplive-media3가 player-sdk에 흡수되면 exclusiveContent 가드 제거 · 근거 DRAFT-flutter-sdk-302-android/PKG-02
 // 값이 true일 때만 "이미 구성됨"으로 본다(ext 또는 gradle.properties; "false"/미지정이면 플러그인이 선언)
 def shopliveRepoAlreadyConfigured = rootProject.findProperty("shopliveMavenRepoConfigured")?.toString()?.toBoolean() ?: false
 if (!shopliveRepoAlreadyConfigured) {
@@ -61,12 +61,14 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
+        // 공용 webPageUrl 벡터(iOS BridgeCoreTests와 공유)만 바뀌어도 단위 테스트가 다시 돌게 입력으로 선언(SMV-1749)
+        unitTests.all { it.inputs.file("${projectDir}/../test/fixtures/http_url_vectors.json") }
     }
 }
 
 dependencies {
-    // FIXME(SDP-VERIFY): 요확인 — shoplive_core/player/streamer 3플러그인의 Shoplive SDK 버전은 같은 값(3.0.2)으로 맞춰야 함. 어긋나면 Gradle이 가장 높은 shoplive-core를 골라 바이너리가 어긋날 수 있음. 완화책(strictly/BOM)은 미결 · 근거 DRAFT-flutter-sdk-302-android/PKG-01 · 자동 통과 금지(:app:dependencies 확인)
-    implementation("cloud.shoplive:shoplive-streamer-sdk:3.0.2")
+    // FIXME(SDP-VERIFY): 요확인 — shoplive_core/player/streamer 3플러그인의 Shoplive SDK 버전은 같은 값(3.0.3)으로 맞춰야 함. 어긋나면 Gradle이 가장 높은 shoplive-core를 골라 바이너리가 어긋날 수 있음. 완화책(strictly/BOM)은 미결 · 근거 DRAFT-flutter-sdk-302-android/PKG-01 · 자동 통과 금지(:app:dependencies 확인)
+    implementation("cloud.shoplive:shoplive-streamer-sdk:3.0.3")
 
     testImplementation("junit:junit:4.13.2")
     // android.jar의 org.json은 stub이라 정규화 테스트용 실구현을 둔다(테스트 전용)

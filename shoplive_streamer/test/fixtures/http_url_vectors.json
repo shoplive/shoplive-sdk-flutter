@@ -1,0 +1,253 @@
+{
+ "_comment": "SMV-1749 webPageUrl shared vectors: Android BridgeSupport WebUrlRule (StreamerTest) and iOS BridgeCore WebURLRule (ios-tests BridgeCoreTests) must both give 'accept' for every input.",
+ "vectors": [
+  {
+   "input": "https://shop.example.com/p?id=1",
+   "accept": true
+  },
+  {
+   "input": "HTTP://example.com",
+   "accept": true
+  },
+  {
+   "input": "HtTpS://Example.com",
+   "accept": true
+  },
+  {
+   "input": "https://my_shop.example.com/",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/\ud55c\uae00",
+   "accept": true
+  },
+  {
+   "input": "https://\ud55c\uae00.com/",
+   "accept": true
+  },
+  {
+   "input": "https://shop.example.com/\uc0c1\ud488/1",
+   "accept": true
+  },
+  {
+   "input": "https://example.com:99999/",
+   "accept": true
+  },
+  {
+   "input": "https://example.com:/",
+   "accept": true
+  },
+  {
+   "input": "https://example.com:abc/",
+   "accept": true
+  },
+  {
+   "input": "https://[::1]/",
+   "accept": true
+  },
+  {
+   "input": "https://user:pw@example.com/",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/%zz",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/a%",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/?q={x}",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/a|b",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/#a#b",
+   "accept": true
+  },
+  {
+   "input": "http://example.com.",
+   "accept": true
+  },
+  {
+   "input": "https://-bad-.com/",
+   "accept": true
+  },
+  {
+   "input": "https://1.2.3.4/",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/a\\b",
+   "accept": true
+  },
+  {
+   "input": "https://exa%20mple.com/",
+   "accept": true
+  },
+  {
+   "input": "https://ex[ample.com/",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/[x]",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/a\"b<c>",
+   "accept": true
+  },
+  {
+   "input": "https://example.com/a^b`c",
+   "accept": true
+  },
+  {
+   "input": "https://\u200b.com/",
+   "accept": true
+  },
+  {
+   "input": "",
+   "accept": false
+  },
+  {
+   "input": "   ",
+   "accept": false
+  },
+  {
+   "input": "example.com",
+   "accept": false
+  },
+  {
+   "input": "/relative",
+   "accept": false
+  },
+  {
+   "input": "ftp://example.com",
+   "accept": false
+  },
+  {
+   "input": "javascript:alert(1)",
+   "accept": false
+  },
+  {
+   "input": "https://",
+   "accept": false
+  },
+  {
+   "input": "https:example.com",
+   "accept": false
+  },
+  {
+   "input": "http:///path",
+   "accept": false
+  },
+  {
+   "input": "https://?q",
+   "accept": false
+  },
+  {
+   "input": "https://#f",
+   "accept": false
+  },
+  {
+   "input": "http://exa mple.com",
+   "accept": false
+  },
+  {
+   "input": "https://example.com/a b",
+   "accept": false
+  },
+  {
+   "input": " https://example.com",
+   "accept": false
+  },
+  {
+   "input": "https://example.com ",
+   "accept": false
+  },
+  {
+   "input": "https://example.com\n",
+   "accept": false
+  },
+  {
+   "input": "https://example.com/\t",
+   "accept": false
+  },
+  {
+   "input": "https://example.com/\u0000",
+   "accept": false
+  },
+  {
+   "input": "https://exa\u00a0mple.com/",
+   "accept": false
+  },
+  {
+   "input": "https://example.com/\u3000",
+   "accept": false
+  },
+  {
+   "input": "https://ex\u0085.com/",
+   "accept": false
+  },
+  {
+   "input": "https://example.com/\u007f",
+   "accept": false
+  },
+  {
+   "input": "httpss://example.com",
+   "accept": false
+  },
+  {
+   "input": "http//example.com",
+   "accept": false
+  },
+  {
+   "input": "\uff48ttps://example.com",
+   "accept": false
+  },
+  {
+   "input": "https://evil.com\\@good.com",
+   "accept": false
+  },
+  {
+   "input": "https://\\evil.com",
+   "accept": false
+  },
+  {
+   "input": "https://:80",
+   "accept": false
+  },
+  {
+   "input": "https://:",
+   "accept": false
+  },
+  {
+   "input": "http://@",
+   "accept": false
+  },
+  {
+   "input": "https://user@:8080/",
+   "accept": false
+  },
+  {
+   "input": "https://@/",
+   "accept": false
+  },
+  {
+   "input": "https://user@host/",
+   "accept": true
+  },
+  {
+   "input": "https://[::1]:8080/p",
+   "accept": true
+  },
+  {
+   "input": "https://a@b@example.com/",
+   "accept": true
+  }
+ ]
+}

@@ -6,7 +6,6 @@ import cloud.shoplive.player.ShopliveCampaignStatus
 import cloud.shoplive.player.ShopliveConnectionState
 import cloud.shoplive.player.ShopliveCouponResult
 import cloud.shoplive.player.ShopliveCustomActionResult
-import cloud.shoplive.player.ShopliveError
 import cloud.shoplive.player.ShopliveInsets
 import cloud.shoplive.player.ShopliveNavigationAction
 import cloud.shoplive.player.ShopliveOverlayUIMode
@@ -80,7 +79,7 @@ internal object PlayerContract {
     const val PRESENTATION_STYLE = "presentationStyle"
 }
 
-/** Dart wire Map ↔ Shoplive player 3.0.2 타입 (순수 함수). */
+/** Dart wire Map ↔ Shoplive player 3.0.3 타입 (순수 함수). */
 internal object PlayerMapper {
     private val K = PlayerContract
 
@@ -157,6 +156,8 @@ internal object PlayerMapper {
                     scale = nonNullFloat(pip, "scale") ?: cp.scale,
                     aspectRatio = nonNullEnum(pip, "aspectRatio", PIP_RATIO) ?: cp.aspectRatio,
                     padding = pip?.optArgs("padding")?.let { mergeInsets(cp.padding, it) } ?: requireNotExplicitNull(pip, "padding", cp.padding),
+                    // SDK 3.0.3 신규(기본 true). 생략 = 현재 값 유지, 키+null·비Boolean = INVALID_ARGUMENT(다른 Boolean 필드와 같은 규칙)
+                    isDragOutToCloseEnabled = nonNullBool(pip, "isDragOutToCloseEnabled") ?: cp.isDragOutToCloseEnabled,
                 ),
                 sound = cs.copy(
                     muteOnStart = nonNullBool(sound, "muteOnStart") ?: cs.muteOnStart,
@@ -209,6 +210,8 @@ internal object PlayerMapper {
     private fun nonNullFloat(a: Args?, key: String): Float? = a?.optFloat(key) ?: requireNotExplicitNull(a, key, null)
     private fun <E> nonNullEnum(a: Args?, key: String, table: Map<String, E>): E? = a?.optWireEnum(key, table)
 
+    // SDK 3.0.3에서 결과 타입의 alertType 기본값이 null→ALERT로 바뀌었다. 브릿지는 생략 시 null을 명시 전달하므로($default 미적용) 3.0.2 동작 유지.
+    // TODO(SDP-VERIFY): 요확인 — alertType 생략 시 기본값(현재 Android=null 웹 기본, iOS=.toast) 3.0.3 네이티브 기본 ALERT로 맞출지 사용자 결정 대기 · 근거 SMV-1749
     fun toCouponResult(couponId: String, a: Args): ShopliveCouponResult = Bridge.constructing(K.STATUS) {
         ShopliveCouponResult(
             couponId,
@@ -240,6 +243,7 @@ internal object PlayerMapper {
             "scale" to c.pip.scale.toDouble(),
             "aspectRatio" to wireOf(c.pip.aspectRatio, PIP_RATIO),
             "padding" to mapOf("left" to c.pip.padding.left, "top" to c.pip.padding.top, "right" to c.pip.padding.right, "bottom" to c.pip.padding.bottom),
+            "isDragOutToCloseEnabled" to c.pip.isDragOutToCloseEnabled,
         ),
         "sound" to mapOf("muteOnStart" to c.sound.muteOnStart, "mixWithOthers" to c.sound.mixWithOthers),
         "appearance" to mapOf("indicatorColor" to (c.appearance.indicatorColor.toLong() and ARGB_MASK)),
@@ -267,7 +271,7 @@ internal object PlayerMapper {
         is ShoplivePlayerEvent.CampaignInfoReceived -> mapOf(TYPE to "campaignInfoReceived") + campaignInfoToWire(event.info)
         is ShoplivePlayerEvent.ConnectionStateChanged -> mapOf(TYPE to "connectionStateChanged", "state" to wireOf(event.state, CONNECTION_STATE))
         is ShoplivePlayerEvent.Playback -> playbackToWire(event.event)
-        is ShoplivePlayerEvent.Error -> mapOf(TYPE to "error", "error" to errorToWire(event.error))
+        is ShoplivePlayerEvent.Error -> mapOf(TYPE to "error", "error" to Bridge.errorToWire(event.error))
         is ShoplivePlayerEvent.Analytics -> analyticsToWire(event.info)
         is ShoplivePlayerEvent.WebCommandReceived ->
             mapOf(TYPE to "webCommandReceived", "name" to event.name, "payload" to ValueNormalizer.normalize(event.payload))
@@ -292,9 +296,6 @@ internal object PlayerMapper {
         val base = mapOf(TYPE to "playback", "event" to kind, "timestampMs" to e.timestampMs)
         return if (e is ShoplivePlaybackEvent.Failed) base + mapOf("code" to e.code, "message" to e.message) else base
     }
-
-    private fun errorToWire(e: ShopliveError): Map<String, Any?> =
-        mapOf("code" to e.code.name, "message" to e.message, "rawCode" to e.rawCode, "recoverable" to e.isRecoverable)
 
     private fun analyticsToWire(i: ShopliveAnalyticsInfo): Map<String, Any?> = mapOf(
         TYPE to "analytics",

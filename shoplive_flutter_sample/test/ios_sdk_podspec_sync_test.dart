@@ -18,7 +18,7 @@ void main() {
     final versions = {
       for (final e in podspecs.entries) e.key: versionPattern.firstMatch(File(e.value).readAsStringSync())?.group(1),
     };
-    expect(versions.values.toSet(), {'3.0.2'}, reason: '$versions');
+    expect(versions.values.toSet(), {'3.0.3'}, reason: '$versions');
   });
 
   test('each XCFramework is owned by exactly one podspec (shared ones by shoplive_core)', () {

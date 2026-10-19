@@ -46,6 +46,8 @@ void main() {
         accessKey: 'ak',
         allowedWebViewDomains: ['a.com'],
         attribution: ShopliveAttribution(utmSource: 's', utmContent: 't'),
+        // 3.0.2 호출 호환: deprecated지만 wire로는 계속 보낸다(네이티브가 타입 검증 후 무시 — SMV-1749).
+        // ignore: deprecated_member_use_from_same_package
         appVersion: '1.0',
       ));
       expect(calls.single.arguments, {
@@ -127,8 +129,8 @@ void main() {
 
     // case: N-01
     test('getSdkVersion returns native string', () async {
-      responder = (_) => '3.0.2';
-      expect(await Shoplive.getSdkVersion(), '3.0.2');
+      responder = (_) => '3.0.3';
+      expect(await Shoplive.getSdkVersion(), '3.0.3');
       expect(calls.single.method, 'getSdkVersion');
     });
   });

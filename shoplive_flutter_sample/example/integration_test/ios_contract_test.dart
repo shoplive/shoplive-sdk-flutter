@@ -15,7 +15,7 @@ void main() {
   group('core', () {
     // case: N-01
     testWidgets('getSdkVersion returns the iOS SDK version', (_) async {
-      expect(await Shoplive.getSdkVersion(), '3.0.2');
+      expect(await Shoplive.getSdkVersion(), '3.0.3');
     });
 
     // case: F-04
@@ -24,8 +24,9 @@ void main() {
       await expectLater(Shoplive.setUser(const ShopliveUser.profile(id: '')), _platformError('INVALID_ARGUMENT'));
     });
 
-    // case: N-01, I-B-01 (D-3: appVersion / profile.custom ignored on iOS)
+    // case: N-01, I-B-01 (D-3: appVersion / profile.custom ignored on iOS; appVersion ignored on both since 3.0.3 — SMV-1749)
     testWidgets('initialize and setUser with Android-only fields succeed', (_) async {
+      // ignore: deprecated_member_use
       await Shoplive.initialize(const ShopliveConfiguration(accessKey: 'uv9CGthPzlvsInZerCw0', appVersion: '1.0.0'));
       await Shoplive.setUser(const ShopliveUser.profile(id: 'u1', gender: ShopliveGender.female, custom: {'k': 'v'}));
       await Shoplive.setUser(const ShopliveUser.guest());

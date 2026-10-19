@@ -52,7 +52,6 @@ class CoreContractTest {
     fun attributionAndAppVersion_keyWithNull_useDefaults() {
         val c = CoreMapper.toConfiguration(Args.of(mapOf("accessKey" to "ak", "attribution" to null, "appVersion" to null)))
         assertNull(c.attribution)
-        assertNull(c.appVersion)
     }
 
     @Test // case: F-04

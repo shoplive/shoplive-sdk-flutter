@@ -85,16 +85,21 @@ internal object Bridge {
 
     fun isSdkError(t: Throwable): Boolean = t is Exception || t is LinkageError
 
-    /** core ShopliveError(Exception)는 streamer 경로에서 던져질 수 있다 — 코드만 싣는다. */
+    /** core ShopliveError(Exception)는 streamer 경로에서 던져질 수 있다 — 코드만 싣는다(message 제외: 민감값 금지). */
     fun sdkErrorDetails(t: Throwable): Map<String, Any?> {
         val details = mutableMapOf<String, Any?>("exception" to t.javaClass.name)
-        if (t is cloud.shoplive.core.publicsurface.ShopliveError) {
-            details["code"] = t.code.name
-            details["rawCode"] = t.rawCode
-            details["recoverable"] = t.isRecoverable
-        }
+        if (t is cloud.shoplive.core.publicsurface.ShopliveError) details += errorToWire(t) - ERROR_MESSAGE
         return details
     }
+
+    /**
+     * Error 이벤트 payload `{code, message, rawCode, recoverable}`(design §2.5) — player·streamer 공통 단일 매핑.
+     * SDK 3.0.3부터 player Error도 core ShopliveError(rawCode Int 상시). code는 SDK 상수명 그대로(불투명 문자열 — 값이 바뀌어도 그대로 전달).
+     */
+    fun errorToWire(e: cloud.shoplive.core.publicsurface.ShopliveError): Map<String, Any?> =
+        mapOf("code" to e.code.name, ERROR_MESSAGE to e.message, "rawCode" to e.rawCode, "recoverable" to e.isRecoverable)
+
+    private const val ERROR_MESSAGE = "message"
 
     /** SDK 생성자·copy 호출을 감싼다: IllegalArgumentException → INVALID_ARGUMENT(key). */
     inline fun <T> constructing(key: String, block: () -> T): T = try {
@@ -116,6 +121,50 @@ internal class AttachGeneration {
     fun isCurrent(generation: Long): Boolean = generation == current
 }
 
+/**
+ * webPageUrl 판정 규칙 — 플랫폼 URL 파서(java.net.URI / iOS URLComponents·URL)는 서로 판정이 달라 쓰지 않고(SMV-1749 R1-01)
+ * 아래 문자열 규칙만 쓴다. iOS BridgeCore `WebURLRule`과 같은 정의이며 공용 벡터
+ * (shoplive_streamer/test/fixtures/http_url_vectors.json)로 양쪽 테스트가 같은 결과를 확인한다.
+ *  ① 비어 있지 않고 공백·제어문자([isSpaceOrControl])가 없다 ② `http://`·`https://`로 시작(ASCII 대소문자 무시)
+ *  ③ 스킴 뒤 authority(첫 `/` `?` `#` 전)에 역슬래시가 없다 ④ authority에서 userinfo(마지막 `@` 앞)·포트(마지막 `:` 뒤,
+ *  `[IPv6]`는 `]`까지가 host)를 뗀 host가 비어 있지 않다. 그 밖(비ASCII 경로·밑줄 호스트·포트 형식 등)은 판정하지 않고 SDK에 넘긴다.
+ */
+internal object WebUrlRule {
+    const val EXPECTED = "http(s) URL without spaces"
+    private val SCHEMES = listOf("http://", "https://")
+    private const val AUTHORITY_END = "/?#"
+
+    fun accepts(s: String): Boolean {
+        if (s.isEmpty() || s.codePoints().anyMatch { isSpaceOrControl(it) }) return false
+        val scheme = SCHEMES.firstOrNull { hasAsciiPrefixIgnoringCase(s, it) } ?: return false
+        val rest = s.substring(scheme.length)
+        val end = rest.indexOfFirst { it in AUTHORITY_END }
+        val authority = if (end < 0) rest else rest.substring(0, end)
+        return '\\' !in authority && host(authority).isNotEmpty()
+    }
+
+    /** authority → host: userinfo(마지막 `@` 앞)와 포트(마지막 `:` 뒤)를 뗀다. `[`로 시작하면 첫 `]`까지가 host(IPv6). */
+    private fun host(authority: String): String {
+        val hostPort = authority.substringAfterLast('@')
+        if (hostPort.startsWith('[')) {
+            val close = hostPort.indexOf(']')
+            return if (close < 0) hostPort else hostPort.substring(0, close + 1)
+        }
+        return hostPort.substringBeforeLast(':')
+    }
+
+    /** C0·DEL·C1 제어문자 + Unicode White_Space. 플랫폼 isWhitespace 정의 차이를 피하려 코드포인트로 고정(iOS와 같은 목록). */
+    fun isSpaceOrControl(cp: Int): Boolean =
+        cp <= 0x20 || cp in 0x7F..0x9F || cp == 0xA0 || cp == 0x1680 || cp in 0x2000..0x200A ||
+            cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000
+
+    /** [prefix]는 소문자 ASCII. 비ASCII 문자의 대소문자 접기(locale·Unicode 규칙)는 적용하지 않는다. */
+    private fun hasAsciiPrefixIgnoringCase(s: String, prefix: String): Boolean =
+        s.length >= prefix.length && prefix.indices.all { i -> (if (s[i] in 'A'..'Z') s[i] + ASCII_CASE_OFFSET else s[i]) == prefix[i] }
+
+    private const val ASCII_CASE_OFFSET = 'a' - 'A'
+}
+
 /** StandardMessageCodec 인자 Map 리더. 키 부재와 키+null을 구분한다(design §2.2). 키는 String만 허용. */
 internal class Args private constructor(private val map: Map<*, *>) {
 
@@ -134,6 +183,15 @@ internal class Args private constructor(private val map: Map<*, *>) {
         null -> null
         is String -> v
         else -> throw BridgeArgumentException(key, "String", typeName(v))
+    }
+
+    /**
+     * http(s) 웹 URL 문자열(키 부재·null → null). [WebUrlRule] 위반 → INVALID_ARGUMENT(값은 싣지 않음). 통과한 문자열은 변형 없이 반환.
+     */
+    fun optHttpUrl(key: String): String? {
+        val raw = optString(key) ?: return null
+        if (!WebUrlRule.accepts(raw)) throw BridgeArgumentException(key, WebUrlRule.EXPECTED, "not http(s) URL")
+        return raw
     }
 
     fun requireBool(key: String): Boolean = optBool(key) ?: throw BridgeArgumentException(key, "Boolean", stateOf(key))
@@ -221,6 +279,7 @@ internal class Args private constructor(private val map: Map<*, *>) {
         }
 
         fun typeName(v: Any?): String = v?.javaClass?.simpleName ?: "null"
+
     }
 }
 

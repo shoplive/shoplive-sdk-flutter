@@ -30,7 +30,7 @@ class ShoplivePlayer {
   ShoplivePlayerPlatform get _platform => ShoplivePlayerPlatform.instance;
 
   /// 이 플러그인 패키지(shoplive_player)의 버전. pubspec.yaml의 version과 같아야 한다(테스트로 고정).
-  static const String pluginVersion = '3.0.2';
+  static const String pluginVersion = '3.0.3';
 
   /// 1.8.x `getPluginVersion()` 대응. 플러그인 자체 값이라 네이티브를 거치지 않는다.
   Future<String> getPluginVersion() async => pluginVersion;

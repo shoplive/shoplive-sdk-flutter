@@ -33,7 +33,12 @@ internal class RecordingSink(private val failWith: RuntimeException? = null) : E
 internal class FakeStreamerPort(override var state: ShopliveBroadcastState = ShopliveBroadcastState.IDLE) : StreamerPort {
     override var delegate: ShopliveStreamerDelegate? = null
     val started = mutableListOf<String>()
-    override fun start(campaignKey: String) { started += campaignKey; state = ShopliveBroadcastState.PREVIEW }
+    val webPageUrls = mutableListOf<String?>()
+    override fun start(campaignKey: String, webPageUrl: String?) {
+        started += campaignKey
+        webPageUrls += webPageUrl
+        state = ShopliveBroadcastState.PREVIEW
+    }
 }
 
 class StreamerTest {
@@ -90,6 +95,56 @@ class StreamerTest {
         handler.attachHost("A")
         assertThrows(BridgeArgumentException::class.java) { call("start", mapOf("campaignKey" to "")) }
         assertEquals(0, created.size)
+    }
+
+    @Test // case: SMV-1749 webPageUrl 생략/null → null(3.0.2 동작), http(s) URL → 그대로 전달
+    fun start_webPageUrl_omittedNullOrValid() {
+        handler.attachHost("A")
+        call("start", mapOf("campaignKey" to "k1"))
+        call("start", mapOf("campaignKey" to "k2", "webPageUrl" to null))
+        call("start", mapOf("campaignKey" to "k3", "webPageUrl" to "https://shop.example.com/p?id=1"))
+        call("start", mapOf("campaignKey" to "k4", "webPageUrl" to "HTTP://example.com"))
+        assertEquals(
+            listOf(null, null, "https://shop.example.com/p?id=1", "HTTP://example.com"),
+            created.map { it.second.webPageUrls.single() },
+        )
+    }
+
+    @Test // case: SMV-1749 webPageUrl 비http(s)·형식 오류·비String → INVALID_ARGUMENT, 인스턴스 생성·이전 세션 해제 없음
+    fun start_webPageUrl_invalid_isInvalidArgument_andCreatesNothing() {
+        handler.attachHost("A")
+        call("start", mapOf("campaignKey" to "k0"))
+        val previous = created.single().second
+        for (bad in listOf("", "   ", "example.com", "/relative", "ftp://example.com", "javascript:alert(1)", "https://", "http://exa mple.com", 1)) {
+            val e = assertThrows(bad.toString(), BridgeArgumentException::class.java) {
+                call("start", mapOf("campaignKey" to "k", "webPageUrl" to bad))
+            }
+            assertEquals("webPageUrl", e.key)
+        }
+        assertEquals(1, created.size)
+        assertSame(live, previous.delegate)
+    }
+
+    @Test // case: SMV-1749 R1-01 공용 벡터 — iOS BridgeCoreTests.testHttpURLSharedVectors와 같은 파일·같은 기대값(플랫폼 판정 일치)
+    fun webUrlRule_sharedVectors_matchIos() {
+        // 테스트 작업 디렉토리 = shoplive_streamer/android
+        val file = java.io.File(System.getProperty("user.dir"), "../test/fixtures/http_url_vectors.json")
+        assertTrue("missing ${file.canonicalPath}", file.isFile)
+        val vectors = org.json.JSONObject(file.readText()).getJSONArray("vectors")
+        assertTrue(vectors.length() >= 50)
+        for (i in 0 until vectors.length()) {
+            val v = vectors.getJSONObject(i)
+            val input = v.getString("input")
+            val accept = v.getBoolean("accept")
+            val args = Args.of(mapOf("u" to input))
+            if (accept) {
+                assertEquals(input, input, args.optHttpUrl("u")) // 통과 시 문자열 그대로 SDK로
+            } else {
+                val e = assertThrows(input, BridgeArgumentException::class.java) { args.optHttpUrl("u") }
+                assertEquals("u", e.key)
+                assertTrue(input, input.isEmpty() || input.isBlank() || !e.message!!.contains(input))
+            }
+        }
     }
 
     @Test // case: ST-01

@@ -40,7 +40,12 @@ void main() {
       'k',
       playOptions: const ShoplivePlayOptions(referrer: 'r', presentationStyle: ShoplivePresentationStyle.pip),
       configuration: const ShoplivePlayerConfiguration(
-        pip: ShoplivePipOptions(isInAppPipEnabled: true, aspectRatio: ShoplivePipRatio.ratio9x16, padding: ShopliveInsets(top: 4)),
+        pip: ShoplivePipOptions(
+          isInAppPipEnabled: true,
+          aspectRatio: ShoplivePipRatio.ratio9x16,
+          padding: ShopliveInsets(top: 4),
+          isDragOutToCloseEnabled: false,
+        ),
         sound: ShopliveSoundOptions(muteOnStart: true),
         android: ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: true),
         customParameters: {'a': 'b'},
@@ -52,7 +57,7 @@ void main() {
       'campaignKey': 'k',
       'playOptions': {'referrer': 'r', 'presentationStyle': 'pip'},
       'configuration': {
-        'pip': {'isInAppPipEnabled': true, 'aspectRatio': 'ratio9x16', 'padding': {'top': 4}},
+        'pip': {'isInAppPipEnabled': true, 'aspectRatio': 'ratio9x16', 'padding': {'top': 4}, 'isDragOutToCloseEnabled': false},
         'sound': {'muteOnStart': true},
         'customParameters': {'a': 'b'},
         'android': {'enterOSPipOnBackPressed': true},
@@ -128,6 +133,7 @@ void main() {
           'pip': {
             'isInAppPipEnabled': true, 'isOSPipEnabled': false, 'defaultPosition': 'bottomRight', 'scale': 0.4,
             'aspectRatio': 'ratio9x16', 'padding': {'left': 1, 'top': 2, 'right': 3, 'bottom': 4},
+            'isDragOutToCloseEnabled': true,
           },
           'sound': {'muteOnStart': false, 'mixWithOthers': true},
           'appearance': {'indicatorColor': 0xFF0000FF},
@@ -144,6 +150,7 @@ void main() {
     expect(c.pip!.defaultPosition, ShoplivePipPosition.bottomRight);
     expect(c.pip!.scale, 0.4);
     expect(c.pip!.padding!.bottom, 4);
+    expect(c.pip!.isDragOutToCloseEnabled, isTrue);
     expect(c.sound!.mixWithOthers, isTrue);
     expect(c.appearance!.indicatorColor, 0xFF0000FF);
     expect(c.navigation!.actionOnNavigation, ShopliveNavigationAction.pip);
@@ -165,5 +172,19 @@ void main() {
     responder = (c) => throw PlatformException(code: c.method == 'play' ? 'NOT_RUNNING' : 'NO_HOST_SCREEN');
     await expectLater(player.play('k'), throwsA(isA<PlatformException>().having((e) => e.code, 'code', 'NOT_RUNNING')));
     await expectLater(player.start('k'), throwsA(isA<PlatformException>().having((e) => e.code, 'code', 'NO_HOST_SCREEN')));
+  });
+
+  // case: SMV-1749 PIP isDragOutToCloseEnabled — 생략 시 키 없음(현재 값 유지), 읽기 형식 오류는 null(던지지 않음)
+  test('pip.isDragOutToCloseEnabled omitted / wrong type on read', () async {
+    await player.setConfiguration(const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isInAppPipEnabled: true)));
+    expect(calls.single.arguments, {
+      'configuration': {
+        'pip': {'isInAppPipEnabled': true},
+      },
+    });
+    responder = (_) => {
+          'pip': {'isDragOutToCloseEnabled': 'yes'},
+        };
+    expect((await player.getConfiguration()).pip!.isDragOutToCloseEnabled, isNull);
   });
 }

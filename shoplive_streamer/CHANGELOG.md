@@ -1,3 +1,15 @@
+## 3.0.3
+
+Built on Shoplive SDK 3.0.3 (Android `cloud.shoplive:shoplive-streamer-sdk:3.0.3`, iOS `ShopliveStreamerSDK` 3.0.3). Depends on `shoplive_core` 3.0.3. No breaking change for callers (see the note on test doubles below).
+
+### Added
+* `ShopliveStreamer.start(campaignKey, webPageUrl: ...)`: optional web page shown by swiping on the broadcast screen (Android and iOS). The value must start with `http://` or `https://` (any case), have a non-empty host (after removing any `user@` and `:port`), no backslash before the path, and no spaces or control characters; anything else fails with `INVALID_ARGUMENT` before the broadcast screen opens. Other checks are left to the SDK, and Android and iOS apply the same rule. `null` keeps the 3.0.2 behavior.
+* `start` gained the named parameter `webPageUrl`. Existing calls still compile, but test doubles that `implements ShopliveStreamer` and override `start(String)` must update their signature to `start(String campaignKey, {String? webPageUrl})`.
+
+### Changed
+* Error events: `rawCode` is now always set on iOS too; `code` remains an opaque SDK constant name.
+* iOS: downloads `ShopliveStreamerSDK` 3.0.3 and verifies the new sha256.
+
 ## 3.0.2
 
 First release of `shoplive_streamer`, built on Shoplive Android SDK 3.0.2 (`cloud.shoplive:shoplive-streamer-sdk:3.0.2`). Re-exports `shoplive_core`.

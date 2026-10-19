@@ -3,9 +3,10 @@ import Foundation
 import ShopliveCore
 
 enum ShopliveErrorWire {
-    /// {code, message, rawCode, recoverable}. code uses the Android UPPER_SNAKE names; rawCode only for unknown(n), else null.
+    /// {code, message, rawCode, recoverable}. code uses the Android UPPER_SNAKE names (opaque string on the Dart side).
+    /// rawCode: SDK 3.0.3 `ShopliveError.rawCode` for every code (Android parity); unknown(n) keeps n as in 3.0.2.
     static func toWire(_ error: ShopliveError) -> [String: Any] {
-        var rawCode: Any = NSNull()
+        var rawCode = error.rawCode
         let code: String
         switch error.code {
         case .authenticationFailed: code = "AUTHENTICATION_FAILED"

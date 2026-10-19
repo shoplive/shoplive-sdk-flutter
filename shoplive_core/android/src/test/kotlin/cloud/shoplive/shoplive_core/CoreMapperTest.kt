@@ -63,10 +63,9 @@ class CoreMapperTest {
         assertEquals("ak", c.accessKey)
         assertEquals(emptyList<String>(), c.allowedWebViewDomains)
         assertNull(c.attribution)
-        assertNull(c.appVersion)
     }
 
-    @Test // case: N-01
+    @Test // case: N-01, SMV-1749 appVersion 무시
     fun configuration_full() {
         val c = CoreMapper.toConfiguration(
             Args.of(
@@ -83,7 +82,20 @@ class CoreMapperTest {
         assertEquals("m", c.attribution!!.utmMedium)
         assertEquals("c", c.attribution!!.utmCampaign)
         assertEquals("t", c.attribution!!.utmContent)
-        assertEquals("1.2.3", c.appVersion)
+        // SDK 3.0.3: appVersion은 SDK에 전달되지 않는다(설정 객체에 필드 없음) — 나머지 필드만 반영
+        assertEquals(CoreMapper.toConfiguration(Args.of(mapOf(
+            "accessKey" to "ak",
+            "allowedWebViewDomains" to listOf("a.com", "b.com"),
+            "attribution" to mapOf("utmSource" to "s", "utmMedium" to "m", "utmCampaign" to "c", "utmContent" to "t"),
+        ))), c)
+    }
+
+    @Test // case: SMV-1749 appVersion 비String은 3.0.2와 같이 INVALID_ARGUMENT(무시 전 타입 검증)
+    fun configuration_appVersionWrongType_isInvalid() {
+        val e = assertThrows(BridgeArgumentException::class.java) {
+            CoreMapper.toConfiguration(Args.of(mapOf("accessKey" to "ak", "appVersion" to 1)))
+        }
+        assertEquals("appVersion", e.key)
     }
 
     @Test // case: F-04

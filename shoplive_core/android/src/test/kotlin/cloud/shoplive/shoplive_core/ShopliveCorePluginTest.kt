@@ -35,7 +35,7 @@ class ShopliveCorePluginTest {
         override fun setStreamToken(token: String) = record("setStreamToken", token)
         override fun logout() = record("logout", null)
         override fun sendConversionEvent(data: ShopliveConversionData) = record("sendConversionEvent", data)
-        override fun getSdkVersion(): String { record("getSdkVersion", null); return "3.0.2" }
+        override fun getSdkVersion(): String { record("getSdkVersion", null); return "3.0.3" }
     }
 
     private fun call(sdk: CoreSdk, method: String, args: Any? = null): RecordingResult {
@@ -71,7 +71,7 @@ class ShopliveCorePluginTest {
     fun getSdkVersion_returnsString() {
         val r = call(FakeSdk(), "getSdkVersion")
         assertEquals(listOf("success"), r.calls)
-        assertEquals("3.0.2", r.value)
+        assertEquals("3.0.3", r.value)
     }
 
     @Test // case: F-05

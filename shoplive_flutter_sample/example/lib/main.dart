@@ -14,10 +14,10 @@ import 'package:shoplive_streamer/shoplive_streamer.dart'
 
 import 'studio_login.dart';
 
-// Shoplive 3.0.2 데모(DRAFT-flutter-sdk-302-android S9): shoplive_core · shoplive_player · shoplive_streamer.
+// Shoplive 3.0.3 데모(DRAFT-flutter-sdk-302-android S9, SMV-1749): shoplive_core · shoplive_player · shoplive_streamer.
 //
-// 빌드 설정(Android): Shoplive SDK는 https://sdk.shoplive.cloud/maven-repo 에서 받는다. Maven Central에 같은 좌표의
-// 다른 바이너리가 있어 cloud.shoplive 그룹은 exclusiveContent로 이 저장소에만 묶는다(android/build.gradle 참고).
+// 빌드 설정(Android): Shoplive SDK는 https://sdk.shoplive.cloud/maven-repo 에서 받는다(3.0.3은 Maven Central에 없음).
+// 플러그인이 cloud.shoplive 그룹을 exclusiveContent로 이 저장소에만 묶는다(플러그인 android/build.gradle 참고).
 // minSdk 23, compileSdk 36, Java 17이 필요하다.
 //
 // 실행: flutter run
@@ -52,7 +52,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(title: 'Shoplive 3.0.2 sample', home: ShopliveSamplePage());
+    return const MaterialApp(title: 'Shoplive 3.0.3 sample', home: ShopliveSamplePage());
   }
 }
 
@@ -62,7 +62,7 @@ class ShopliveSamplePage extends StatefulWidget {
   /// 테스트에서 가짜 로그인 서버를 넣기 위한 주입점. null이면 실제 스튜디오 로그인.
   final StudioLogin? studioLogin;
 
-  static const String title = 'Shoplive SDK 3.0.2 sample';
+  static const String title = 'Shoplive SDK 3.0.3 sample';
 
   @override
   State<ShopliveSamplePage> createState() => _ShopliveSamplePageState();
@@ -75,6 +75,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
   final _campaignKey = TextEditingController(text: _campaignKeyFromEnv);
   final _shareScheme = TextEditingController();
   final _streamerKey = TextEditingController();
+  final _webPageUrl = TextEditingController();
   final _studioId = TextEditingController();
   final _studioPassword = TextEditingController();
   late final StudioLogin _studioLogin = widget.studioLogin ?? StudioLogin();
@@ -114,7 +115,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
     for (final s in _subscriptions) {
       s.cancel();
     }
-    for (final c in [_accessKey, _campaignKey, _shareScheme, _streamerKey, _studioId, _studioPassword, _userId, _jwt]) {
+    for (final c in [_accessKey, _campaignKey, _shareScheme, _streamerKey, _webPageUrl, _studioId, _studioPassword, _userId, _jwt]) {
       c.dispose();
     }
     super.dispose();
@@ -374,7 +375,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
                     expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                    title: const Text('고급 제어 (3.0.2 API 개별 호출)'),
+                    title: const Text('고급 제어 (3.0.3 API 개별 호출)'),
                     children: _advancedControls(),
                   ),
                 ],
@@ -420,6 +421,13 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
               configuration: const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isInAppPipEnabled: true)),
             ),
           ),
+          _button(
+            'start preview',
+            () => _player.start(
+              _campaignKey.text.trim(),
+              configuration: const ShoplivePlayerConfiguration(type: ShoplivePlayerType.preview),
+            ),
+          ),
           _button('play', () => _player.play(_campaignKey.text.trim())),
           _button('stop', _player.stop),
           _button('reload', _player.reload),
@@ -433,14 +441,24 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
           _button('exit PiP', _player.exitPictureInPicture),
           _button('state', () async => (await _player.getState()).name),
           _button('resize fit', () => _player.setResizeMode(ShopliveResizeMode.fit)),
+          for (final enabled in [false, true])
+            _button(
+              'PiP drag-out close ${enabled ? 'on' : 'off'}',
+              () => _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isDragOutToCloseEnabled: enabled))),
+            ),
           _button('config', () async {
             final c = await _player.getConfiguration();
-            return 'inAppPip=${c.pip?.isInAppPipEnabled} muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
+            return 'type=${c.type?.name} inAppPip=${c.pip?.isInAppPipEnabled} dragOutClose=${c.pip?.isDragOutToCloseEnabled} '
+                'muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
           }),
         ]),
         _section('Streamer'),
+        _field(_webPageUrl, 'Web page URL (optional, http/https)'),
         _buttons([
-          _button('start broadcast', () => _streamer.start(_streamerKey.text.trim())),
+          _button('start broadcast', () {
+            final url = _webPageUrl.text.trim();
+            return _streamer.start(_streamerKey.text.trim(), webPageUrl: url.isEmpty ? null : url);
+          }),
           _button('broadcast state', () async => (await _streamer.getState()).name),
         ]),
       ];

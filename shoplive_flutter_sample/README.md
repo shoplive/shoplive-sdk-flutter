@@ -1,6 +1,6 @@
 # shoplive_player
 
-Fullscreen live/VOD player for Flutter, built on Shoplive Android SDK **3.0.2** (`cloud.shoplive:shoplive-player-sdk`).
+Fullscreen live/VOD player for Flutter, built on Shoplive Android SDK **3.0.3** (`cloud.shoplive:shoplive-player-sdk`).
 
 Shoplive for Flutter ships as three packages:
 
@@ -26,7 +26,7 @@ Apps that only play videos add `shoplive_player`, and streamer binaries stay out
 
 ```yaml
 dependencies:
-  shoplive_player: 3.0.2   # includes shoplive_core
+  shoplive_player: 3.0.3   # includes shoplive_core
 ```
 
 > `shoplive_core`, `shoplive_player` and `shoplive_streamer` wrap the same SDK release and must use the same version. `shoplive_player` and `shoplive_streamer` pin `shoplive_core` to their own version. (Maintainers: publish `shoplive_core` first, then `shoplive_player` and `shoplive_streamer`.)
@@ -35,7 +35,7 @@ dependencies:
 
 Shoplive Android SDK 3.x is served from `https://sdk.shoplive.cloud/maven-repo`.
 
-**Why `cloud.shoplive` must come only from the Shoplive repository:** Maven Central hosts an artifact with the same coordinates but different contents (`cloud.shoplive:shoplive-media3:1.10.1.2`). The Central copy lacks `ShopLiveHlsPlayerFactory`, which `shoplive-player-sdk:3.0.2` references. If Central is searched first, release (R8) builds fail with *Missing class*, and HLS playback can crash with `NoClassDefFoundError`. The fix is to restrict the `cloud.shoplive` group to the Shoplive repository with `exclusiveContent`. This is a temporary measure until `shoplive-media3` is merged into `shoplive-player-sdk` (planned for 3.0.4).
+**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.3 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
 
 ### (a) Default: automatic
 
@@ -88,9 +88,9 @@ If your build resolves dependencies from `settings.gradle(.kts)` `dependencyReso
 ## iOS setup
 
 - **Minimum iOS 15.** Set `platform :ios, '15.0'` in `ios/Podfile`. Flutter's template uses a lower value, and `pod install` fails with "higher minimum deployment target" until you change it.
-- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.2 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.2`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
+- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.3 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.3`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
   - Network: the first install needs access to `github.com` and its download host. `curl` honours `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`.
-  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.2/<Name>.xcframework.zip`.
+  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.3/<Name>.xcframework.zip`.
   - Offline / CI: set `SHOPLIVE_IOS_SDK_DIR` to a folder that contains the five release zips (`ShopliveCore`, `ShoplivePlayerSDK`, `ShopliveStreamerSDK`, `ShopLiveWebRTCHelperSDK`, `WebRTC` `.xcframework.zip`). To avoid downloading on every CI run, cache the pub cache (key it by SDK version).
   - The plugin folder must be writable, because the frameworks have to live inside it. With a read-only pub cache, point `PUB_CACHE` at a writable folder and run `flutter pub get` again.
 - If you run `pod install` yourself, use a UTF-8 locale (`export LANG=en_US.UTF-8`); CocoaPods fails otherwise.
@@ -136,6 +136,7 @@ await player.close();           // always succeeds
 - `start(configuration:)` and `setConfiguration` **merge** the given fields on top of the current settings. Omitted fields keep their values. `getConfiguration()` returns the full current configuration.
 - Settings made before the first `start`, or across a screen recreation, are kept and applied to the next player instance.
 - `presentationStyle: pip` requires `pip.isInAppPipEnabled: true` in the merged configuration. Otherwise `start` fails with `INVALID_ARGUMENT`.
+- `pip.isDragOutToCloseEnabled` (SDK 3.0.3+, Android and iOS): whether the in-app PIP window closes when dragged off the screen. Omitted keeps the current value (the SDK default is `true` on both platforms).
 - `configuration.android` holds Android-only options.
 
 ### Coupon and custom-action requests
@@ -160,13 +161,13 @@ The Dart API and channel contract are the same on both platforms. The iOS SDK di
 | Topic | iOS behavior |
 |---|---|
 | `start` | The plugin creates the SDK player view controller and presents it over the top-most screen. Calling `start` while a session is open (fullscreen or in-app PIP) switches the campaign in the same player instead of opening a second one |
-| `configuration.type` | No type field on iOS: `preview` / `live` select the SDK `.preview` / `.default` configuration preset, then the other fields are applied |
-| Ignored on iOS | `configuration.android.*`, `pip.aspectRatio`, `initialize(appVersion:)`, `setUser(profile.custom)` - accepted and ignored (no iOS SDK counterpart) |
+| `configuration.type` | `preview` / `live` select the SDK `.preview` / `.default` configuration preset and set the SDK `type` (3.0.3), then the other fields are applied |
+| Ignored on iOS | `configuration.android.*`, `pip.aspectRatio`, `setUser(profile.custom)` - accepted and ignored (no iOS SDK counterpart). `initialize(appVersion:)` is ignored on both platforms since SDK 3.0.3 |
 | Not exposed yet | iOS-only SDK options: `sound.autoResumeOnCallEnded`, `pip.fixedWidth` / `floatingOffset` / `windowProvider`, `appearance.allowScreenCapture`, loading images, chat fonts, `attribution.advertisingId` - the SDK defaults apply |
-| Events | `playback` `failed`: `code` / `message` are `null`. `error`: `rawCode` is `null` except for unknown SDK codes. Streamer `stateChanged.isRehearsal` is `null` (the iOS SDK has no rehearsal flag) |
-| Coupon / custom-action respond | `alertType` defaults to `toast` when omitted (the iOS SDK requires a value) |
+| Events | `playback` `failed`: `code` / `message` are `null`. `error`: `rawCode` is the SDK raw code (always set since SDK 3.0.3, same as Android). Streamer `stateChanged.isRehearsal` is `null` (the iOS SDK has no rehearsal flag) |
+| Coupon / custom-action respond | `alertType` defaults to `toast` when omitted (unchanged from 3.0.2; the SDK 3.0.3 initializer default `.alert` is not used) |
 | `indicatorColor` | ARGB as an unsigned 32-bit value (`0xFF00FF00`), same on Android |
-| Removed 1.x iOS options | `setKeepAspectOnTabletPortrait`, `setEnabledPipSwipeOut`, preview close events and the close-button handlers have no 3.0.2 counterpart. The 1.x sample app's `CLICK_BACK_BUTTON` workaround (switch to in-app PIP) was app code; with 3.0.2, handle such commands from `webCommandReceived` if your app still needs it |
+| Removed 1.x iOS options | `setKeepAspectOnTabletPortrait`, preview close events and the close-button handlers have no 3.x counterpart (`setEnabledPipSwipeOut`: closest is `pip.isDragOutToCloseEnabled`, SDK 3.0.3). The 1.x sample app's `CLICK_BACK_BUTTON` workaround (switch to in-app PIP) was app code; with 3.x, handle such commands from `webCommandReceived` if your app still needs it |
 
 ## Errors
 
@@ -183,9 +184,9 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 
 ## Migrating from 1.x
 
-3.0.2 is a rewrite. The 1.x Dart API (up to 1.8.14), the Shortform API and `ShopLiveCommon` have been removed. Rows marked 1.8.x cover APIs added in 1.7.1–1.8.14.
+3.x (since 3.0.2) is a rewrite. The 1.x Dart API (up to 1.8.14), the Shortform API and `ShopLiveCommon` have been removed. Rows marked 1.8.x cover APIs added in 1.7.1–1.8.14.
 
-| 1.x | 3.0.2 |
+| 1.x | 3.x |
 |---|---|
 | `ShopLiveCommon.setAccessKey` / `setAuth(ShopLiveCommonAuth)` | `Shoplive.initialize(ShopliveConfiguration(accessKey: …, attribution: …))` |
 | `ShopLiveCommon.setUtmSource/Medium/Campaign/Content` | `ShopliveConfiguration.attribution` (`ShopliveAttribution`) |
@@ -204,13 +205,13 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 | `addParameter` / `removeParameter` | `configuration.customParameters`. The map is replaced as a whole |
 | `startPictureInPicture` / `stopPictureInPicture` | `enterPictureInPicture` / `exitPictureInPicture` |
 | `sendCommandMessage` | `send(command, payload)` |
-| `useCloseButton`, `setEndpoint`, tablet aspect ratio, transparent status bar | No equivalent in SDK 3.0.2 |
+| `useCloseButton`, `setEndpoint`, tablet aspect ratio, transparent status bar | No equivalent in SDK 3.x |
 | 1.8.x `setPreviewOption` margins / `position` | `configuration.pip.padding` (`ShopliveInsets`) / `configuration.pip.defaultPosition` (`ShoplivePipPosition`) |
-| 1.8.x `setPreviewOption` `pipRadius`, `enableSwipeOut`, `pipMaxSize` | No equivalent in SDK 3.0.2 (closest: `pip.scale`, `pip.aspectRatio`) |
-| 1.8.x `closeButtonConfig` (`ShopLiveCloseButtonConfig`) | No equivalent in SDK 3.0.2 |
+| 1.8.x `setPreviewOption` `pipRadius`, `enableSwipeOut`, `pipMaxSize` | `enableSwipeOut`: closest is `configuration.pip.isDragOutToCloseEnabled` (SDK 3.0.3, check on a device). `pipRadius`, `pipMaxSize`: no equivalent (closest: `pip.scale`, `pip.aspectRatio`) |
+| 1.8.x `closeButtonConfig` (`ShopLiveCloseButtonConfig`) | No equivalent in SDK 3.x |
 | 1.8.x `hidePreview()` | No separate API. `close()` ends the session (whether it matches 1.8.x hide-only behavior is unverified) |
 | 1.8.x `previewClose` stream and its `reason` (`close_button`, `swipe_out`, `broadcast_ended`, `programmatic`) | No equivalent event. `stateChanged(closed)` tells that it closed, `campaignStatusChanged(ended)` that the broadcast ended; the close reason is not available |
-| 1.8.x `setResizeMode(auto / centerCrop / fit)` | `setResizeMode(ShopliveResizeMode.fill / fit)`. `auto` and `centerCrop` do not exist in SDK 3.0.2; `centerCrop` users should try `fill` (closest, check on a device) |
+| 1.8.x `setResizeMode(auto / centerCrop / fit)` | `setResizeMode(ShopliveResizeMode.fill / fit)`. `auto` and `centerCrop` do not exist in SDK 3.x; `centerCrop` users should try `fill` (closest, check on a device) |
 | 1.8.x `sendDownloadCouponResult` / `sendCustomActionResult` | `couponRequests` / `customWebActionRequests` and `request.respond(...)` |
 | 1.8.x `getSdkVersion()` | `Shoplive.getSdkVersion()` |
 | 1.8.x `getPluginVersion()` | `ShoplivePlayer.instance.getPluginVersion()` (or `ShoplivePlayer.pluginVersion`) |

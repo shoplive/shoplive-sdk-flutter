@@ -1,5 +1,5 @@
 #
-# shoplive_player - Flutter bridge for Shoplive iOS SDK 3.0.2 (DRAFT-flutter-sdk-302-ios design section 4).
+# shoplive_player - Flutter bridge for Shoplive iOS SDK 3.0.3 (DRAFT-flutter-sdk-302-ios design section 4; SMV-1749).
 # The SDK XCFrameworks are downloaded from the GitHub release at pod install, verified by sha256
 # (SDK Package.swift constants) and vendored. Keep this file ASCII-only (pod install may run without a UTF-8 locale).
 #
@@ -10,10 +10,10 @@ load File.join(__dir__, 'shoplive_ios_sdk.rb')
 pubspec = YAML.safe_load(File.read(File.join(__dir__, '..', 'pubspec.yaml')))
 
 # Shoplive iOS SDK version - must be identical in the three Shoplive podspecs (checked by a test, I-D-05).
-shoplive_ios_sdk_version = '3.0.2'
-# XCFrameworks owned by this pod and their sha256 (https://github.com/shoplive/shoplive-sdk-ios/blob/3.0.2/Package.swift)
+shoplive_ios_sdk_version = '3.0.3'
+# XCFrameworks owned by this pod and their sha256 (https://github.com/shoplive/shoplive-sdk-ios/blob/3.0.3/Package.swift)
 shoplive_ios_sdk_artifacts = {
-  'ShoplivePlayerSDK' => 'c52249cd448f1e98a92e72b10a18839b4b4c1646fa383d17c6681a5d8f8715dc',
+  'ShoplivePlayerSDK' => '2696ca66c4e285b6061ac892d23063e29ceb4bb3be5d07609fdf88bc03cc50eb',
 }
 
 ShopliveIosSdk.ensure!(pod_dir: __dir__, version: shoplive_ios_sdk_version, artifacts: shoplive_ios_sdk_artifacts)

@@ -19,7 +19,7 @@ pluginManagement {
 plugins {
     id "dev.flutter.flutter-plugin-loader" version "1.0.0"
     id "com.android.application" version "8.7.3" apply false
-    // Kotlin 1.9.25 = Shoplive SDK 3.0.2 POM의 kotlin-stdlib 버전
+    // Kotlin 1.9.25 = Shoplive SDK 3.0.3 POM의 kotlin-stdlib 버전
     id "org.jetbrains.kotlin.android" version "1.9.25" apply false
 }
 

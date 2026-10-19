@@ -66,7 +66,15 @@ class ShoplivePlayerConfiguration {
 E? _enum<E extends Enum>(List<E> values, Object? raw, E unknown) => raw == null ? null : wire.parseWireEnum(values, raw, unknown: unknown);
 
 class ShoplivePipOptions {
-  const ShoplivePipOptions({this.isInAppPipEnabled, this.isOSPipEnabled, this.defaultPosition, this.scale, this.aspectRatio, this.padding});
+  const ShoplivePipOptions({
+    this.isInAppPipEnabled,
+    this.isOSPipEnabled,
+    this.defaultPosition,
+    this.scale,
+    this.aspectRatio,
+    this.padding,
+    this.isDragOutToCloseEnabled,
+  });
 
   final bool? isInAppPipEnabled;
   final bool? isOSPipEnabled;
@@ -74,6 +82,10 @@ class ShoplivePipOptions {
   final double? scale;
   final ShoplivePipRatio? aspectRatio;
   final ShopliveInsets? padding;
+
+  /// in-app PIP 창을 화면 밖으로 끌어 놓아 닫을 수 있는지(SDK 3.0.3+, Android·iOS). null이면 현재 값 유지(SDK 기본값 —
+  /// Android·iOS 모두 true — Android는 바이트코드, iOS는 실측으로 확인).
+  final bool? isDragOutToCloseEnabled;
 
   @internal
   Map<String, Object?> toWire() {
@@ -84,6 +96,7 @@ class ShoplivePipOptions {
     wire.putIfNotNull(m, 'scale', scale);
     wire.putIfNotNull(m, 'aspectRatio', aspectRatio == null ? null : wire.toWire(aspectRatio!));
     wire.putIfNotNull(m, 'padding', padding?.toWire());
+    wire.putIfNotNull(m, 'isDragOutToCloseEnabled', isDragOutToCloseEnabled);
     return m;
   }
 
@@ -96,6 +109,7 @@ class ShoplivePipOptions {
           scale: wire.asType<num>(m['scale'])?.toDouble(),
           aspectRatio: _enum(ShoplivePipRatio.values, m['aspectRatio'], ShoplivePipRatio.unknown),
           padding: ShopliveInsets._fromWire(wire.asStringMap(m['padding'])),
+          isDragOutToCloseEnabled: wire.asType<bool>(m['isDragOutToCloseEnabled']),
         );
 }
 
