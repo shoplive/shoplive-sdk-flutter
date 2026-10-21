@@ -1,0 +1,114 @@
+# PR build — [SMV-1723] the build check people ran by hand before a release PR, on every pull request.
+#
+# The example app (shoplive_flutter_sample/example) depends on all three plugins by path, so building it builds
+# exactly the plugin code in the PR against the native SDK versions the PR pins:
+#   Android  resolves cloud.shoplive:*:<V> from sdk.shoplive.cloud/maven-repo  → that version is published
+#   iOS      pod install downloads the shoplive-sdk-ios <V> release zips and checks their sha256 → published, sha right
+# Not covered: whether the player plays (real-device QA), the Android release build (R8 / consumer ProGuard rules)
+# and the iOS device slice — this builds debug APK and the simulator app only.
+#
+# Flutter is pinned to the version the team builds with locally (3.22.1, a patch above the pubspecs' 3.22.0 floor);
+# change it here only together with that. No secrets are used, so pull requests from forks run the same checks.
+name: PR build
+
+on:
+  pull_request:
+  push:
+    branches: [main]   # a merged PR is checked again on what main actually became
+  workflow_dispatch:
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.22.1"
+  PACKAGES: "shoplive_core shoplive_flutter_sample shoplive_streamer"
+  EXAMPLE_DIR: shoplive_flutter_sample/example
+
+jobs:
+  dart:
+    name: Dart — analyze · test · publish dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Analyze and test each package
+        run: |
+          set -euo pipefail
+          for p in $PACKAGES; do
+            echo "::group::$p"
+            (cd "$p" && flutter pub get && flutter analyze && flutter test)
+            echo "::endgroup::"
+          done
+          echo "::group::$EXAMPLE_DIR (tests)"
+          (cd "$EXAMPLE_DIR" && flutter pub get && flutter test)
+          echo "::endgroup::"
+      # shoplive_core only: player and streamer pin shoplive_core to the exact same version on purpose (the three
+      # packages ship together), and pub reports that pin as a warning — their dry-run always exits 65.
+      - name: Publish dry-run (shoplive_core)
+        working-directory: shoplive_core
+        run: flutter pub publish --dry-run
+
+  android:
+    name: Android — plugin unit tests · example APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build the example APK
+        working-directory: ${{ env.EXAMPLE_DIR }}
+        run: |
+          flutter pub get
+          flutter build apk --debug
+      - name: Plugin unit tests
+        working-directory: ${{ env.EXAMPLE_DIR }}/android
+        run: ./gradlew :shoplive_core:testDebugUnitTest :shoplive_player:testDebugUnitTest :shoplive_streamer:testDebugUnitTest --console=plain
+      - name: Upload unit test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-unit-test-reports
+          path: ${{ env.EXAMPLE_DIR }}/build/*/reports/tests/
+          retention-days: 14
+
+  ios:
+    name: iOS — bridge tests · example simulator build
+    # macos-26 (arm64, default Xcode 26.x — the one with the iOS platform installed), not macos-latest: a new image
+    # (macOS 27 / Xcode 27) under Flutter 3.22.1 should be a deliberate change, not every PR turning red at once.
+    # matrix-sdk-ios builds the SDK with Xcode 26.6 pinned; this only needs an Xcode that can read it.
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Bridge tests (XCTest)
+        working-directory: ios-tests/BridgeCoreTests
+        run: swift test
+      - name: Build the example for the simulator (pod install fetches and verifies the iOS SDK zips)
+        working-directory: ${{ env.EXAMPLE_DIR }}
+        run: |
+          xcodebuild -version
+          flutter pub get
+          flutter build ios --simulator --no-codesign
