@@ -1,0 +1,54 @@
+# Release Flutter SDK on merge — [SMV-1723] release PR(release-flutter/<V>)이 머지되면 머지 커밋에 태그 <V> 를 붙이고
+# Publish Flutter SDK 를 그 태그 ref 로 부른다.
+#
+# 태그는 GITHUB_TOKEN 으로 만든다. GITHUB_TOKEN 의 태그 push 는 다른 워크플로를 깨우지 않으므로 발행은 workflow_dispatch(--ref <V>)로
+# 부른다 — pub.dev 는 workflow_dispatch 의 태그 ref 를 받는다(패키지 설정: tag pattern {{version}} · workflow_dispatch 허용).
+# 빌드·발행 형상은 머지 커밋으로 고정한다(브랜치 HEAD 가 아니라).
+#
+# 1.x(release/v1)에서도 돌려면 이 파일과 발행 워크플로·스크립트가 release/v1 에 있어야 한다 — pull_request 이벤트는 머지 커밋의
+# 워크플로 파일로, 발행은 태그 커밋의 파일로 돈다. 버튼이 그 동기화를 확인한다(RELEASING.md 의 'release/v1 맞추기').
+name: Release Flutter SDK on merge
+
+on:
+  pull_request:
+    types: [closed]
+    # TODO(SDP-VERIFY): 요확인 — release/v1 머지가 release/v1 의 이 파일로 도는지 1.x 첫 릴리스에서 확인(사람 동기화 뒤) · 근거 SMV-1723
+    branches: [main, "release/v1"]
+  # 탈출구 — 머지 때 이 워크플로가 돌지 않았거나(예: 1.x 첫 동기화 전) 태그·호출이 실패했을 때, 머지된 PR 번호로 실행한다.
+  # 'Use workflow from' 은 그 PR 의 기준 브랜치(main 또는 release/v1). 판정은 머지 때와 같다(API 로 PR 을 다시 읽는다).
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "머지된 release PR 번호 (release-flutter/<V> → main | release/v1)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-flutter-on-merge-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  tag:
+    name: tag and publish
+    # 빠른 거름(머지된 release-flutter/ PR 또는 수동 실행). 포크·기준 브랜치·버전은 스크립트가 API 로 다시 판정한다.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release-flutter/'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write        # 태그(git/refs)
+      actions: write         # Publish Flutter SDK 를 workflow_dispatch 로 부른다
+      pull-requests: read    # PR 을 API 로 다시 읽는다
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.ref }}
+          fetch-depth: 0
+      - name: Tag the merge commit and start publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+        run: bash scripts/release-flutter-on-merge.sh "$PR_NUMBER"
