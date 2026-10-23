@@ -11,7 +11,7 @@
 #   · 그 워크플로는 발행 전에 `dart pub publish --dry-run` 을 하고, 경고가 있으면 dry-run 은 65 로 끝난다. shoplive_player ·
 #     shoplive_streamer 는 shoplive_core 를 같은 버전으로 고정해 경고가 항상 나므로(pr-build.yml 참고) 그 단계에서 멈춘다.
 #   · 패키지 1개 단위라 3.x 의 순서(core 발행 → pub.dev 에 보임 → player·streamer)와 이미 있는 패키지 건너뛰기를 넣을 자리가 없다.
-# 패키지마다 job 을 나눈다 — OIDC 토큰은 setup-dart 스텝에서 만들어 수명이 짧으므로 발행 직전에 만든다(core 를 기다린 뒤).
+# 패키지마다 job 을 나눈다 — OIDC 토큰은 setup-dart 스텝에서 만들어 수명이 짧으므로 Flutter 설치 뒤 발행 직전에 만든다(core 를 기다린 뒤).
 # 발행 job 의 액션은 커밋 SHA 로 고정하고 캐시를 쓰지 않는다(id-token 이 있는 job).
 name: Publish Flutter SDK
 
@@ -66,12 +66,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1 — OIDC 토큰 → PUB_TOKEN
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: false
+      # [SMV-1723] OIDC 토큰은 Flutter 설치 뒤, 발행 바로 앞에서 만든다(토큰 수명이 짧다). flutter 는 자기 Dart 를 쓴다.
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1 — OIDC 토큰 → PUB_TOKEN
       - name: Publish
         env:
           PKG_DIR: ${{ needs.plan.outputs.core_dir }}
@@ -102,12 +103,13 @@ jobs:
       # OIDC 토큰을 만들기 전에 기다린다(토큰 수명이 짧다). 상한: 10초 × 30회.
       - name: Wait until the line's core version is on pub.dev
         run: bash scripts/release-flutter-publish.sh wait
-      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1 — OIDC 토큰 → PUB_TOKEN
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: false
+      # [SMV-1723] OIDC 토큰은 Flutter 설치 뒤, 발행 바로 앞에서 만든다(토큰 수명이 짧다). flutter 는 자기 Dart 를 쓴다.
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1 — OIDC 토큰 → PUB_TOKEN
       - name: Publish
         env:
           PKG_DIR: ${{ matrix.package.dir }}

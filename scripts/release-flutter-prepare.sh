@@ -133,6 +133,9 @@ PREV=$(line_tag_max "$MAJOR" "$VERSION")
 git merge-base --is-ancestor "${PREV}^{commit}" "$BASE_SHA" || die "직전 태그 ${PREV} 가 ${BASE} 에 들어 있지 않습니다 — CHANGELOG 범위를 정할 수 없습니다."
 NFROM=$(tree_native_version "$MAJOR" "$WT") || die "${BASE} 의 네이티브 SDK 버전을 읽지 못했습니다."
 is_semver "$NFROM" || die "${BASE} 의 네이티브 SDK 버전을 읽지 못했습니다: '${NFROM}'"
+# [SMV-1723] 네이티브 SDK 를 조용히 내리지 않는다 — native_version 이 지금 트리의 네이티브 버전보다 낮으면 멈춘다(같으면 그대로).
+[[ "$NATIVE" == "$NFROM" ]] || semver_gt "$NATIVE" "$NFROM" \
+  || die "native_version ${NATIVE} 이 ${BASE} 의 네이티브 SDK 버전 ${NFROM} 보다 낮습니다 — 네이티브를 내리는 릴리스는 자동화하지 않습니다."
 log "Flutter ${OLD} → ${VERSION} · 네이티브 ${NFROM} → ${NATIVE} · 커밋 범위 ${PREV}..${BASE}"
 # 직전 태그 이후 각 패키지 폴더를 바꾼 커밋 제목 — PR 본문에만 둔다(CHANGELOG 는 영어 고정 문구 + 네이티브 링크).
 COMMITS_MD=""

@@ -47,7 +47,7 @@ jobs:
       actions: write         # PR build 를 workflow_dispatch 로 부른다
     steps:
       # CHANGELOG 범위(직전 태그 이후)와 기준 브랜치를 읽으려면 전체 이력·태그가 필요하다.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Open the release PR

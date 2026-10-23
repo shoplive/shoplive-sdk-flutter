@@ -43,7 +43,7 @@ jobs:
       actions: write         # Publish Flutter SDK 를 workflow_dispatch 로 부른다
       pull-requests: read    # PR 을 API 로 다시 읽는다
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.ref }}
           fetch-depth: 0
