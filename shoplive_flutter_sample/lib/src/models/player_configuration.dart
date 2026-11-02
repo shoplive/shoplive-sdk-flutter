@@ -74,6 +74,8 @@ class ShoplivePipOptions {
     this.aspectRatio,
     this.padding,
     this.isDragOutToCloseEnabled,
+    this.closeButton,
+    this.restoreButton,
   });
 
   final bool? isInAppPipEnabled;
@@ -87,6 +89,14 @@ class ShoplivePipOptions {
   /// Android·iOS 모두 true — Android는 바이트코드, iOS는 실측으로 확인).
   final bool? isDragOutToCloseEnabled;
 
+  /// in-App PIP 창의 닫기(×) 버튼(SDK 3.0.4+, Android·iOS — SMV-1899). null이면 현재 값 유지.
+  /// 숨기면 끌어내기([isDragOutToCloseEnabled])·앱의 `close()`로만 닫힌다 — 둘 다 막으면 사용자가 닫을 UI가 없다.
+  final ShopliveButtonOptions? closeButton;
+
+  /// in-App PIP 창의 복귀(풀스크린으로) 버튼(SDK 3.0.4+, Android·iOS — SMV-1899). null이면 현재 값 유지.
+  /// 숨기면 PIP 창을 탭해 복귀한다.
+  final ShopliveButtonOptions? restoreButton;
+
   @internal
   Map<String, Object?> toWire() {
     final m = <String, Object?>{};
@@ -97,6 +107,8 @@ class ShoplivePipOptions {
     wire.putIfNotNull(m, 'aspectRatio', aspectRatio == null ? null : wire.toWire(aspectRatio!));
     wire.putIfNotNull(m, 'padding', padding?.toWire());
     wire.putIfNotNull(m, 'isDragOutToCloseEnabled', isDragOutToCloseEnabled);
+    wire.putIfNotNull(m, 'closeButton', closeButton?.toWire());
+    wire.putIfNotNull(m, 'restoreButton', restoreButton?.toWire());
     return m;
   }
 
@@ -110,7 +122,41 @@ class ShoplivePipOptions {
           aspectRatio: _enum(ShoplivePipRatio.values, m['aspectRatio'], ShoplivePipRatio.unknown),
           padding: ShopliveInsets._fromWire(wire.asStringMap(m['padding'])),
           isDragOutToCloseEnabled: wire.asType<bool>(m['isDragOutToCloseEnabled']),
+          closeButton: ShopliveButtonOptions._fromWire(wire.asStringMap(m['closeButton'])),
+          restoreButton: ShopliveButtonOptions._fromWire(wire.asStringMap(m['restoreButton'])),
         );
+}
+
+/// in-App PIP 버튼 옵션(SDK 3.0.4+ `ButtonOptions`, SMV-1899). OS PIP 창에는 적용되지 않는다.
+///
+/// [isHidden]이 true면 이미지와 상관없이 버튼을 그리지 않는다(우선순위는 SDK가 정함).
+class ShopliveButtonOptions {
+  const ShopliveButtonOptions({this.isHidden, this.nativeImageName});
+
+  /// true면 버튼을 그리지 않는다. null이면 현재 값 유지(SDK 기본 false).
+  final bool? isHidden;
+
+  /// 버튼 이미지로 쓸 **앱 네이티브 이미지 이름** — Android는 앱의 drawable 리소스 이름(`res/drawable/<name>`),
+  /// iOS는 앱 번들 Asset Catalog의 이미지 이름이다. **Flutter 에셋 경로(`assets/...`)가 아니다.**
+  /// - null(생략)이면 현재 이미지를 유지한다. 이미지를 지정하지 않으면 3.0.3과 같은 외형(서버 에셋 → SDK 기본)이다.
+  /// - 이름을 찾지 못하거나 ''이면 실패하지 않고 경고 로그를 남긴 뒤 이미지 없음으로 그린다(이전에 지정한 이미지도 지워짐).
+  /// - 버튼 틀은 28dp/pt — 벡터(Android vector drawable·iOS PDF/SVG) 또는 그 크기에 맞는 이미지를 권장한다.
+  ///   Android drawable은 테마 속성(`?attr/...`)을 쓰지 않는다.
+  /// - Android release 빌드의 리소스 축소(shrinkResources)는 Dart에서만 이름으로 쓰는 drawable을 지울 수 있다 —
+  ///   `res/raw/keep.xml`에 `tools:keep="@drawable/<name>"`으로 남긴다.
+  /// - 쓰기 전용: `getConfiguration()`은 이 값을 돌려주지 않는다(항상 null). get → set 왕복은 생략 = 유지라 이미지가 보존된다.
+  final String? nativeImageName;
+
+  @internal
+  Map<String, Object?> toWire() {
+    final m = <String, Object?>{};
+    wire.putIfNotNull(m, 'isHidden', isHidden);
+    wire.putIfNotNull(m, 'nativeImageName', nativeImageName);
+    return m;
+  }
+
+  static ShopliveButtonOptions? _fromWire(Map<String, Object?>? m) =>
+      m == null ? null : ShopliveButtonOptions(isHidden: wire.asType<bool>(m['isHidden']));
 }
 
 /// PIP 여백(px). null 변은 현재 값 유지.

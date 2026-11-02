@@ -211,4 +211,38 @@ void main() {
         };
     expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isNull);
   });
+
+  // case: A3-3·A3-6 (R-D5, SMV-1899) pip.closeButton/restoreButton — 생략 시 키 없음, 지정 필드만, fromWire는 isHidden만(nativeImageName 쓰기 전용)
+  test('pip buttons toWire / fromWire', () async {
+    await player.setConfiguration(const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isInAppPipEnabled: true)));
+    await player.setConfiguration(const ShoplivePlayerConfiguration(
+      pip: ShoplivePipOptions(
+        closeButton: ShopliveButtonOptions(nativeImageName: 'app_close'),
+        restoreButton: ShopliveButtonOptions(isHidden: true),
+      ),
+    ));
+    expect(calls[0].arguments, {
+      'configuration': {
+        'pip': {'isInAppPipEnabled': true},
+      },
+    });
+    expect(calls[1].arguments, {
+      'configuration': {
+        'pip': {
+          'closeButton': {'nativeImageName': 'app_close'},
+          'restoreButton': {'isHidden': true},
+        },
+      },
+    });
+    responder = (_) => {
+          'pip': {
+            'closeButton': {'isHidden': false, 'nativeImageName': 'ignored'},
+            'restoreButton': {'isHidden': 'yes'},
+          },
+        };
+    final pip = (await player.getConfiguration()).pip!;
+    expect(pip.closeButton!.isHidden, isFalse);
+    expect(pip.closeButton!.nativeImageName, isNull);
+    expect(pip.restoreButton!.isHidden, isNull);
+  });
 }

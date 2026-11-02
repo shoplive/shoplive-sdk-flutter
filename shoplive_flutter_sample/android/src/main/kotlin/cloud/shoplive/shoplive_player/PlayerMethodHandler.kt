@@ -41,11 +41,18 @@ internal class PlayerMethodHandler<H : Any>(
     private val registry: PendingRequestRegistry,
     private val portFactory: (H) -> PlayerPort,
     private val liveDelegate: () -> ShoplivePlayerDelegate,
+    /** 앱 drawable 이름 → 리소스 ID(PIP 버튼 nativeImageName, SMV-1899 A3). 플러그인이 applicationContext로 만든다. */
+    private val drawableId: (String) -> Int?,
 ) {
     private val k = PlayerContract
 
     private var host: H? = null
     private var port: PlayerPort? = null
+    /**
+     * [port]에 붙인 delegate(create에서 만든 것). SDK 3.0.4는 세션이 끝나면(endSession — accessKeyChanged·closeOtherSessions·
+     * PIP 닫기·Activity 파괴) delegate를 null로 비우므로 port.delegate로는 retire할 bridge를 찾을 수 없다(SMV-1899 D6).
+     */
+    private var portDelegate: ShoplivePlayerDelegate? = null
     private var boundHost: WeakReference<H>? = null
 
     private var savedConfiguration: ShoplivePlayerConfiguration? = null
@@ -68,6 +75,7 @@ internal class PlayerMethodHandler<H : Any>(
         // TODO(SDP-VERIFY): 요확인 — 엔진 재attach 후 새 플러그인 인스턴스는 이전 엔진이 남긴 세션(closeWhenAppDestroyed=false)을 제어·종료할 수 없음. SDK 전역 세션 종료 경로 유무 · 근거 DRAFT-flutter-sdk-302-android/R-03 · 자동 통과 금지(실측)
         port?.delegate = DetachedDelegate
         port = null
+        portDelegate = null
         boundHost = null
         host = null
         savedConfiguration = null
@@ -118,7 +126,7 @@ internal class PlayerMethodHandler<H : Any>(
         k.GET_CURRENT_CAMPAIGN -> PlayerMapper.campaignToWire(port?.currentCampaign)
         k.IS_RUNNING -> port?.isRunning ?: false
         k.SET_CONFIGURATION -> {
-            val merged = PlayerMapper.mergeConfiguration(currentConfiguration(), args.requireArgs(k.CONFIGURATION))
+            val merged = PlayerMapper.mergeConfiguration(currentConfiguration(), args.requireArgs(k.CONFIGURATION), drawableId)
             port?.configuration = merged
             savedConfiguration = merged
             null
@@ -143,7 +151,7 @@ internal class PlayerMethodHandler<H : Any>(
         val options = PlayerMapper.toPlayOptions(args.optArgs(k.PLAY_OPTIONS))
         val partial = args.optArgs(k.CONFIGURATION)
         val current = currentConfiguration()
-        val effective = partial?.let { PlayerMapper.mergeConfiguration(current, it) } ?: current
+        val effective = partial?.let { PlayerMapper.mergeConfiguration(current, it, drawableId) } ?: current
         if (options.presentationStyle == ShoplivePlayerPresentationStyle.PIP && !effective.pip.isInAppPipEnabled) {
             // B-09: SDK는 Log.w 후 조용히 거부하므로 브릿지가 사전 거부(개발자 확정). 검증 실패 시 인스턴스를 만들지 않는다.
             throw BridgeArgumentException("${k.PLAY_OPTIONS}.${k.PRESENTATION_STYLE}", "fullscreen unless pip.isInAppPipEnabled", "pip")
@@ -194,6 +202,10 @@ internal class PlayerMethodHandler<H : Any>(
      * close는 인스턴스 상태를 동기로 끝낸다(endSession: CLOSED·SessionRegistry.remove·delegate=null). 화면(Activity) 종료는 비동기.
      */
     private fun retire(p: PlayerPort) {
+        // D6(SMV-1899 A4-5): 교체 경로에서만 retired 표시 — 이미 메인 hop에 예약된 이전 세션 콜백도 실행 시점에 버려진다
+        // (SDK가 delegate를 어떻게 캡처하든 무관). release()가 현재 세션에 불리는 경로(detachHost)는 표시하지 않는다.
+        // SDK가 비웠을 수 있는 p.delegate가 아니라 보관한 portDelegate로 찾는다. 테스트 대역 delegate는 bridge가 아니라 표시 대상이 아니다.
+        if (port === p) (portDelegate as? PlayerDelegateBridge)?.retire()
         release(p)
         registry.flushAll()
         // TODO(SDP-VERIFY): 요확인 — 이전 전체화면 Activity finish(비동기)와 새 start의 Activity 실행이 겹칠 때 화면 전환(특히 같은 campaignKey) 실측. 같은 campaignKey면 종료 중 풀스크린이 재사용돼 처음 인스턴스 설정(isCustomShareEnabled 등)을 따르는지도 확인(SDK KDoc) · 근거 SMV-1749, SMV-1899 A2-5
@@ -214,7 +226,9 @@ internal class PlayerMethodHandler<H : Any>(
         savedConfiguration?.let { p.configuration = it }
         savedResizeMode?.let { p.resizeMode = it }
         savedOverlayUI?.let { p.overlayUI = it }
-        p.delegate = liveDelegate()
+        val delegate = liveDelegate()
+        p.delegate = delegate
+        portDelegate = delegate
         port = p
         boundHost = WeakReference(forHost)
         return p
@@ -224,6 +238,7 @@ internal class PlayerMethodHandler<H : Any>(
         p.delegate = DetachedDelegate
         if (port === p) {
             port = null
+            portDelegate = null
             boundHost = null
         }
     }

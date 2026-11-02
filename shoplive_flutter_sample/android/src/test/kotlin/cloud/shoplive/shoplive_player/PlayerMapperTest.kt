@@ -33,6 +33,10 @@ import org.junit.Test
 
 class PlayerMapperTest {
 
+    /** 이름 → drawable 리졸버 대역(JVM 테스트에는 Resources가 없다 — design F7). 기본은 해석 실패. */
+    private fun merge(current: ShoplivePlayerConfiguration, partial: Args, drawableId: (String) -> Int? = { null }) =
+        PlayerMapper.mergeConfiguration(current, partial, drawableId)
+
     // ---- wire 테이블: SDK 상수 전부를 덮는다(design §2.3) ----
 
     @Test // case: B-01, B-02
@@ -93,16 +97,16 @@ class PlayerMapperTest {
 
     @Test // case: B-06 (DRAFT-flutter-sdk-302-ios: Dart 0xFF00FF00 is 4278255360, beyond Int)
     fun indicatorColor_unsignedArgb_roundTrips() {
-        val merged = PlayerMapper.mergeConfiguration(
+        val merged = merge(
             ShoplivePlayerConfiguration(),
             Args.of(mapOf("appearance" to mapOf("indicatorColor" to 0xFF00FF00L))),
         )
         assertEquals(0xFF00FF00.toInt(), merged.appearance.indicatorColor)
         assertEquals(0xFF00FF00L, (PlayerMapper.configurationToWire(merged)["appearance"] as Map<*, *>)["indicatorColor"])
-        val signed = PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(mapOf("appearance" to mapOf("indicatorColor" to -16711936))))
+        val signed = merge(ShoplivePlayerConfiguration(), Args.of(mapOf("appearance" to mapOf("indicatorColor" to -16711936))))
         assertEquals(0xFF00FF00.toInt(), signed.appearance.indicatorColor)
         assertThrows(BridgeArgumentException::class.java) {
-            PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(mapOf("appearance" to mapOf("indicatorColor" to 0x1_0000_0000L))))
+            merge(ShoplivePlayerConfiguration(), Args.of(mapOf("appearance" to mapOf("indicatorColor" to 0x1_0000_0000L))))
         }
     }
 
@@ -130,7 +134,7 @@ class PlayerMapperTest {
     fun merge_partial_keepsCurrentValues() {
         val current = ShoplivePlayerConfiguration()
         val partial = Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true), "sound" to mapOf("muteOnStart" to true)))
-        val merged = PlayerMapper.mergeConfiguration(current, partial)
+        val merged = merge(current, partial)
         assertEquals(true, merged.pip.isInAppPipEnabled)
         assertEquals(true, merged.sound.muteOnStart)
         assertEquals(current.pip.isOSPipEnabled, merged.pip.isOSPipEnabled)
@@ -143,15 +147,15 @@ class PlayerMapperTest {
 
     @Test // case: CFG-01
     fun merge_overPreviouslyMerged_accumulates() {
-        val first = PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true))))
-        val second = PlayerMapper.mergeConfiguration(first, Args.of(mapOf("overlay" to mapOf("ui" to "hidden"))))
+        val first = merge(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true))))
+        val second = merge(first, Args.of(mapOf("overlay" to mapOf("ui" to "hidden"))))
         assertEquals(true, second.pip.isInAppPipEnabled)
         assertEquals(ShopliveOverlayUIMode.HIDDEN, second.overlay.ui)
     }
 
     @Test // case: CFG-01, CS-03
     fun merge_full_includingAndroidMap() {
-        val merged = PlayerMapper.mergeConfiguration(
+        val merged = merge(
             ShoplivePlayerConfiguration(),
             Args.of(
                 mapOf(
@@ -191,27 +195,27 @@ class PlayerMapperTest {
 
     @Test // case: CFG-01, B-03
     fun merge_nullableFields_keyWithNull_isExplicitNull() {
-        val start = PlayerMapper.mergeConfiguration(
+        val start = merge(
             ShoplivePlayerConfiguration(),
             Args.of(mapOf("navigation" to mapOf("shareScheme" to "s"), "android" to mapOf("isVolumeKeyEnabled" to true))),
         )
-        val cleared = PlayerMapper.mergeConfiguration(
+        val cleared = merge(
             start,
             Args.of(mapOf("navigation" to mapOf("shareScheme" to null), "android" to mapOf("isVolumeKeyEnabled" to null))),
         )
         assertNull(cleared.navigation.shareScheme)
         assertNull(cleared.sound.isVolumeKeyEnabled)
-        val kept = PlayerMapper.mergeConfiguration(start, Args.of(mapOf("navigation" to emptyMap<String, Any>())))
+        val kept = merge(start, Args.of(mapOf("navigation" to emptyMap<String, Any>())))
         assertEquals("s", kept.navigation.shareScheme)
     }
 
     @Test // case: CFG-01, F-04
     fun merge_nonNullFieldWithNull_isInvalid() {
         assertThrows(BridgeArgumentException::class.java) {
-            PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to null))))
+            merge(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to null))))
         }
         assertThrows(BridgeArgumentException::class.java) {
-            PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(mapOf("type" to "LIVE")))
+            merge(ShoplivePlayerConfiguration(), Args.of(mapOf("type" to "LIVE")))
         }
     }
 
@@ -219,34 +223,80 @@ class PlayerMapperTest {
     fun merge_navigationCustomShare() {
         val base = ShoplivePlayerConfiguration()
         assertEquals(false, base.navigation.isCustomShareEnabled) // SDK 기본값 false — 생략 시 이 값 유지
-        val on = PlayerMapper.mergeConfiguration(base, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to true))))
+        val on = merge(base, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to true))))
         assertEquals(true, on.navigation.isCustomShareEnabled)
-        val kept = PlayerMapper.mergeConfiguration(on, Args.of(mapOf("navigation" to mapOf("shareScheme" to "s"))))
+        val kept = merge(on, Args.of(mapOf("navigation" to mapOf("shareScheme" to "s"))))
         assertEquals(true, kept.navigation.isCustomShareEnabled)
-        val off = PlayerMapper.mergeConfiguration(on, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to false))))
+        val off = merge(on, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to false))))
         assertEquals(false, off.navigation.isCustomShareEnabled)
         for (bad in listOf(null, "true", 1)) {
             val e = assertThrows(BridgeArgumentException::class.java) {
-                PlayerMapper.mergeConfiguration(on, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to bad))))
+                merge(on, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to bad))))
             }
             assertEquals("isCustomShareEnabled", e.key)
         }
         assertEquals(true, (PlayerMapper.configurationToWire(on)["navigation"] as Map<*, *>)["isCustomShareEnabled"])
     }
 
+    @Test // case: A3-1·A3-2·A3-3·A3-6 (R-A6, SMV-1899) PIP 버튼 병합 — 리졸버 해석·미해석·생략 유지·키+null 해제·타입 오류, toWire는 isHidden만
+    fun merge_pipButtons() {
+        val ids = mapOf("app_close" to 101, "app_restore" to 202)
+        val resolve: (String) -> Int? = { ids[it] }
+        val base = ShoplivePlayerConfiguration()
+        assertNull(base.pip.closeButton.imageResId)
+        assertEquals(false, base.pip.closeButton.isHidden)
+        val set = merge(
+            base,
+            Args.of(mapOf("pip" to mapOf("closeButton" to mapOf("nativeImageName" to "app_close"), "restoreButton" to mapOf("isHidden" to true, "nativeImageName" to "app_restore")))),
+            resolve,
+        )
+        assertEquals(101, set.pip.closeButton.imageResId)
+        assertEquals(false, set.pip.closeButton.isHidden)
+        assertEquals(202, set.pip.restoreButton.imageResId) // 숨김과 이미지를 그대로 넘긴다(우선순위는 SDK)
+        assertEquals(true, set.pip.restoreButton.isHidden)
+        // isHidden만 주면 이미지 유지, 버튼 생략도 유지
+        val hidden = merge(set, Args.of(mapOf("pip" to mapOf("closeButton" to mapOf("isHidden" to true)))), resolve)
+        assertEquals(101, hidden.pip.closeButton.imageResId)
+        assertEquals(true, hidden.pip.closeButton.isHidden)
+        assertEquals(202, hidden.pip.restoreButton.imageResId)
+        // 미해석·'' → 예외 없이 이미지 없음(이전 이미지도 지움)
+        for (name in listOf("missing", "")) {
+            val r = merge(set, Args.of(mapOf("pip" to mapOf("closeButton" to mapOf("nativeImageName" to name)))), resolve)
+            assertNull(r.pip.closeButton.imageResId)
+        }
+        // 리졸버가 0을 돌려줘도 미지정(null)으로
+        assertNull(merge(base, Args.of(mapOf("pip" to mapOf("closeButton" to mapOf("nativeImageName" to "x")))), { 0 }).pip.closeButton.imageResId)
+        // 키+null → 해제(nullable 필드 규칙)
+        assertNull(merge(set, Args.of(mapOf("pip" to mapOf("closeButton" to mapOf("nativeImageName" to null)))), resolve).pip.closeButton.imageResId)
+        // 타입 오류 → INVALID_ARGUMENT, 보관값 불변은 Bridge.constructing 규칙
+        val bad = listOf<Map<String, Any?>>(
+            mapOf("closeButton" to null),
+            mapOf("closeButton" to "app_close"),
+            mapOf("restoreButton" to mapOf("isHidden" to null)),
+            mapOf("restoreButton" to mapOf("isHidden" to "yes")),
+            mapOf("closeButton" to mapOf("nativeImageName" to 3)),
+        )
+        for (pip in bad) {
+            assertThrows(BridgeArgumentException::class.java) { merge(set, Args.of(mapOf("pip" to pip)), resolve) }
+        }
+        val wire = PlayerMapper.configurationToWire(hidden)["pip"] as Map<*, *>
+        assertEquals(mapOf("isHidden" to true), wire["closeButton"])
+        assertEquals(mapOf("isHidden" to true), wire["restoreButton"])
+    }
+
     @Test // case: SMV-1749 PIP isDragOutToCloseEnabled 생략/true/false/null/비Boolean
     fun merge_pipDragOutToClose() {
         val base = ShoplivePlayerConfiguration()
         assertEquals(true, base.pip.isDragOutToCloseEnabled) // SDK 기본값 true(3.0.3) — 생략 시 이 값 유지
-        val off = PlayerMapper.mergeConfiguration(base, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to false))))
+        val off = merge(base, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to false))))
         assertEquals(false, off.pip.isDragOutToCloseEnabled)
-        val kept = PlayerMapper.mergeConfiguration(off, Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true))))
+        val kept = merge(off, Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true))))
         assertEquals(false, kept.pip.isDragOutToCloseEnabled)
-        val on = PlayerMapper.mergeConfiguration(off, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to true))))
+        val on = merge(off, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to true))))
         assertEquals(true, on.pip.isDragOutToCloseEnabled)
         for (bad in listOf(null, "true", 1)) {
             val e = assertThrows(BridgeArgumentException::class.java) {
-                PlayerMapper.mergeConfiguration(base, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to bad))))
+                merge(base, Args.of(mapOf("pip" to mapOf("isDragOutToCloseEnabled" to bad))))
             }
             assertEquals("isDragOutToCloseEnabled", e.key)
         }
@@ -263,12 +313,12 @@ class PlayerMapperTest {
 
     @Test // case: CFG-02
     fun configuration_roundTrip_wire() {
-        val merged = PlayerMapper.mergeConfiguration(
+        val merged = merge(
             ShoplivePlayerConfiguration(),
             Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true, "isDragOutToCloseEnabled" to false, "padding" to mapOf("left" to 5)), "customParameters" to mapOf("a" to "b"))),
         )
         val wire = PlayerMapper.configurationToWire(merged)
-        val again = PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(wire))
+        val again = merge(ShoplivePlayerConfiguration(), Args.of(wire))
         assertEquals(PlayerMapper.configurationToWire(again), wire)
         assertEquals(true, (wire["pip"] as Map<*, *>)["isInAppPipEnabled"])
         assertEquals(5, ((wire["pip"] as Map<*, *>)["padding"] as Map<*, *>)["left"])
@@ -439,7 +489,7 @@ class PlayerMapperTest {
     @Test // case: CFG-01
     fun insets_partial_keepsCurrent() {
         val cur = ShoplivePlayerConfiguration().pip.padding
-        val merged = PlayerMapper.mergeConfiguration(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("padding" to mapOf("top" to 9)))))
+        val merged = merge(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("padding" to mapOf("top" to 9)))))
         assertEquals(9, merged.pip.padding.top)
         assertEquals(cur.left, merged.pip.padding.left)
         assertEquals(ShopliveInsets::class.java, merged.pip.padding.javaClass)

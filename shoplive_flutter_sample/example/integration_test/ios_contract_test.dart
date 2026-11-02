@@ -106,6 +106,42 @@ void main() {
       expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isFalse);
     });
 
+    // case: A3-2·A3-3·A3-6 (R-I1, SMV-1899) — button isHidden round-trip, unknown nativeImageName still succeeds, wrong types INVALID_ARGUMENT
+    testWidgets('pip buttons round-trip and validate', (_) async {
+      await player.setConfiguration(const ShoplivePlayerConfiguration(
+        pip: ShoplivePipOptions(
+          closeButton: ShopliveButtonOptions(isHidden: true),
+          restoreButton: ShopliveButtonOptions(nativeImageName: 'sample_pip_restore'),
+        ),
+      ));
+      var pip = (await player.getConfiguration()).pip!;
+      expect(pip.closeButton!.isHidden, isTrue);
+      expect(pip.restoreButton!.isHidden, isFalse);
+      expect(pip.restoreButton!.nativeImageName, isNull); // write-only
+      // An image name that does not resolve (or a Flutter asset path) is not an error: log + no image.
+      for (final name in ['no_such_image', 'assets/close.png', '']) {
+        await player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(closeButton: ShopliveButtonOptions(nativeImageName: name))));
+      }
+      pip = (await player.getConfiguration()).pip!;
+      expect(pip.closeButton!.isHidden, isTrue); // omitted isHidden keeps the value
+      const channel = MethodChannel('shoplive_player');
+      for (final bad in <Map<String, Object?>>[
+        {'closeButton': null},
+        {'closeButton': 'x'},
+        {'restoreButton': {'isHidden': null}},
+        {'restoreButton': {'isHidden': 'yes'}},
+        {'closeButton': {'nativeImageName': 3}},
+      ]) {
+        await expectLater(
+          channel.invokeMethod<void>('setConfiguration', {'configuration': {'pip': bad}}),
+          _platformError('INVALID_ARGUMENT'),
+        );
+      }
+      await player.setConfiguration(const ShoplivePlayerConfiguration(
+        pip: ShoplivePipOptions(closeButton: ShopliveButtonOptions(isHidden: false), restoreButton: ShopliveButtonOptions(isHidden: false)),
+      ));
+    });
+
     // case: B-09, B-08, N-06
     testWidgets('validation errors', (_) async {
       await player.setConfiguration(const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isInAppPipEnabled: false)));

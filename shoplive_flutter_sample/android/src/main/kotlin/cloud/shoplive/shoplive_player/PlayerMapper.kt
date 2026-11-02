@@ -1,5 +1,6 @@
 package cloud.shoplive.shoplive_player
 
+import android.util.Log
 import cloud.shoplive.player.ShopliveAnalyticsInfo
 import cloud.shoplive.player.ShopliveCampaignInfo
 import cloud.shoplive.player.ShopliveCampaignStatus
@@ -136,8 +137,9 @@ internal object PlayerMapper {
      * 부분 Configuration을 [current] 위에 병합(CFG-01, X-04). 하위 맵 안의 생략 필드도 현재 값 유지.
      * non-null 필드에 키+null → INVALID_ARGUMENT. nullable 필드(shareScheme·isVolumeKeyEnabled)는 키+null = 명시적 null.
      * customParameters는 맵 단위 교체. loadingAnimation·chatInputTypeface는 노출하지 않으므로 항상 현재 값 유지.
+     * [drawableId]: 앱 drawable 리소스 이름 → 리소스 ID(없으면 null). Mapper가 Context를 갖지 않도록 인자로 받는다(JVM 테스트 대역 — SMV-1899 D1).
      */
-    fun mergeConfiguration(current: ShoplivePlayerConfiguration, partial: Args): ShoplivePlayerConfiguration =
+    fun mergeConfiguration(current: ShoplivePlayerConfiguration, partial: Args, drawableId: (String) -> Int?): ShoplivePlayerConfiguration =
         Bridge.constructing(K.CONFIGURATION) {
             val android = partial.optArgs("android")
             val pip = partial.optArgs("pip")
@@ -161,6 +163,9 @@ internal object PlayerMapper {
                     padding = pip?.optArgs("padding")?.let { mergeInsets(cp.padding, it) } ?: requireNotExplicitNull(pip, "padding", cp.padding),
                     // SDK 3.0.3 신규(기본 true). 생략 = 현재 값 유지, 키+null·비Boolean = INVALID_ARGUMENT(다른 Boolean 필드와 같은 규칙)
                     isDragOutToCloseEnabled = nonNullBool(pip, "isDragOutToCloseEnabled") ?: cp.isDragOutToCloseEnabled,
+                    // SDK 3.0.4 in-App PIP 버튼(SMV-1899 A3). isHidden·이미지 우선순위는 SDK가 정한다 — 브릿지는 값만 넘긴다.
+                    closeButton = mergeButton(cp.closeButton, pip, "closeButton", drawableId),
+                    restoreButton = mergeButton(cp.restoreButton, pip, "restoreButton", drawableId),
                 ),
                 sound = cs.copy(
                     muteOnStart = nonNullBool(sound, "muteOnStart") ?: cs.muteOnStart,
@@ -184,6 +189,36 @@ internal object PlayerMapper {
                 customParameters = partial.optStringStringMap("customParameters") ?: requireNotExplicitNull(partial, "customParameters", current.customParameters),
             )
         }
+
+    /**
+     * 버튼 맵 병합: 키 생략 = 현재 값, 키+null·비맵 = INVALID_ARGUMENT(padding과 같은 규칙). isHidden은 non-null Boolean.
+     * nativeImageName: 생략 = 현재 이미지 유지, 키+null = 해제(nullable 필드 규칙), 비문자열 = INVALID_ARGUMENT.
+     */
+    private fun mergeButton(
+        cur: ShoplivePlayerConfiguration.ButtonOptions,
+        pip: Args?,
+        key: String,
+        drawableId: (String) -> Int?,
+    ): ShoplivePlayerConfiguration.ButtonOptions {
+        val a = pip?.optArgs(key) ?: return requireNotExplicitNull(pip, key, cur)
+        val imageResId = if (a.has(NATIVE_IMAGE_NAME)) a.optString(NATIVE_IMAGE_NAME)?.let { resolveImage(key, it, drawableId) } else cur.imageResId
+        return cur.copy(isHidden = nonNullBool(a, "isHidden") ?: cur.isHidden, imageResId = imageResId)
+    }
+
+    /**
+     * 해석 실패('' · 없는 이름 · 0)는 실패로 던지지 않는다(§1(3)): 경고 1줄 후 이미지 없음 → SDK가 서버 에셋 → 기본으로 그린다.
+     * 0 대신 null을 넘긴다(SDK도 0을 미지정으로 보지만 계약상 "없음"은 null).
+     */
+    private fun resolveImage(key: String, name: String, drawableId: (String) -> Int?): Int? {
+        val id = name.takeIf { it.isNotEmpty() }?.let(drawableId)?.takeIf { it != 0 }
+        if (id == null) {
+            Log.w(TAG, "configuration.pip.$key.$NATIVE_IMAGE_NAME '$name' is not a drawable resource of the app; using the server asset or the SDK default")
+        }
+        return id
+    }
+
+    private const val NATIVE_IMAGE_NAME = "nativeImageName"
+    private const val TAG = "ShoplivePlayer"
 
     private fun mergeInsets(cur: ShopliveInsets, a: Args): ShopliveInsets = ShopliveInsets(
         nonNullInt(a, "left") ?: cur.left,
@@ -248,6 +283,9 @@ internal object PlayerMapper {
             "aspectRatio" to wireOf(c.pip.aspectRatio, PIP_RATIO),
             "padding" to mapOf("left" to c.pip.padding.left, "top" to c.pip.padding.top, "right" to c.pip.padding.right, "bottom" to c.pip.padding.bottom),
             "isDragOutToCloseEnabled" to c.pip.isDragOutToCloseEnabled,
+            // 버튼은 isHidden만(nativeImageName은 쓰기 전용 — iOS UIImage를 이름으로 되돌릴 수 없어 양 OS 같은 wire, SMV-1899 D1)
+            "closeButton" to mapOf("isHidden" to c.pip.closeButton.isHidden),
+            "restoreButton" to mapOf("isHidden" to c.pip.restoreButton.isHidden),
         ),
         "sound" to mapOf("muteOnStart" to c.sound.muteOnStart, "mixWithOthers" to c.sound.mixWithOthers),
         "appearance" to mapOf("indicatorColor" to (c.appearance.indicatorColor.toLong() and ARGB_MASK)),

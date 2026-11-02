@@ -38,7 +38,7 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
         let attach = self.attach
         let scheduler = self.scheduler
         handler = PlayerMethodHandler(registry: registry, hostScreen: KeyWindowHostScreen()) { [weak events, weak requests, weak registry] handler in
-            guard let events = events, let requests = requests, let registry = registry else { return DetachedPlayerDelegate.shared }
+            guard let events = events, let requests = requests, let registry = registry else { return nil }
             return PlayerDelegateBridge(handler: handler, events: events, requests: requests, registry: registry,
                                         attach: attach, scheduler: scheduler)
         }

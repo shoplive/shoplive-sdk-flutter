@@ -63,6 +63,9 @@ enum PlayerMapper {
             // SDK 3.0.3. Missing = keep the SDK value, key+null or non-Bool = INVALID_ARGUMENT (Android parity).
             // SDK default is true (measured on iOS 18.4 simulator, SMV-1749).
             if let v = try nonNullBool(pip, "isDragOutToCloseEnabled") { config.pip.isDragOutToCloseEnabled = v }
+            // SDK 3.0.4 in-App PIP buttons (SMV-1899 A3). isHidden vs image precedence is the SDK's - the bridge passes both.
+            config.pip.closeButton = try mergeButton(pip, "closeButton", config.pip.closeButton)
+            config.pip.restoreButton = try mergeButton(pip, "restoreButton", config.pip.restoreButton)
             if try nonNullEnum(pip, "aspectRatio", pipRatio) != nil {
                 bridgeLog("ShoplivePlayer", "configuration.pip.aspectRatio is not supported by the iOS SDK and is ignored")
             }
@@ -136,6 +139,9 @@ enum PlayerMapper {
                 "defaultPosition": wireOf(c.pip.defaultPosition, pipPosition),
                 "scale": Double(c.pip.scale),
                 "isDragOutToCloseEnabled": c.pip.isDragOutToCloseEnabled,
+                // isHidden only: nativeImageName is write-only (a UIImage cannot be turned back into its name - SMV-1899 D1).
+                "closeButton": ["isHidden": c.pip.closeButton.isHidden],
+                "restoreButton": ["isHidden": c.pip.restoreButton.isHidden],
                 "padding": ["left": Int(c.pip.padding.left), "top": Int(c.pip.padding.top),
                             "right": Int(c.pip.padding.right), "bottom": Int(c.pip.padding.bottom)],
             ] as [String: Any],
@@ -273,6 +279,32 @@ enum PlayerMapper {
         guard color.getRed(&r, green: &g, blue: &b, alpha: &a) else { return Int(UInt32(0xFF00_0000)) }
         func byte(_ c: CGFloat) -> UInt32 { UInt32(max(0, min(255, (c * 255).rounded()))) }
         return Int(byte(a) << 24 | byte(r) << 16 | byte(g) << 8 | byte(b)) // unsigned 32-bit ARGB
+    }
+
+    private static let nativeImageName = "nativeImageName"
+
+    /// Button map: missing = keep, key+null or non-map = INVALID_ARGUMENT (padding rule). isHidden is a non-null Bool.
+    /// nativeImageName: missing = keep the image, key+null = clear (nullable field rule), non-String = INVALID_ARGUMENT.
+    private static func mergeButton(_ pip: Args, _ key: String,
+                                    _ current: ShoplivePlayerConfiguration.ButtonOptions) throws -> ShoplivePlayerConfiguration.ButtonOptions {
+        guard let a = try pip.optArgs(key) else {
+            if pip.has(key) { throw BridgeArgumentError(key: key, expected: "non-null value", actual: "null") }
+            return current
+        }
+        var button = current
+        if let v = try nonNullBool(a, "isHidden") { button.isHidden = v }
+        if a.has(nativeImageName) { button.image = try a.optString(nativeImageName).flatMap { resolveImage(key, $0) } }
+        return button
+    }
+
+    /// App bundle Asset Catalog image. Not found or "" never fails the call (contract 3): log once, no image -> the SDK draws
+    /// the server asset or its default.
+    private static func resolveImage(_ key: String, _ name: String) -> UIImage? {
+        let image = name.isEmpty ? nil : UIImage(named: name)
+        if image == nil {
+            bridgeLog("ShoplivePlayer", "configuration.pip.\(key).\(nativeImageName) '\(name)' is not an image in the app bundle; using the server asset or the SDK default")
+        }
+        return image
     }
 
     private static func nonNullBool(_ a: Args, _ key: String) throws -> Bool? {

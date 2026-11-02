@@ -28,11 +28,12 @@ final class PlayerMethodHandler {
 
     private let registry: PendingRequests<PendingRequest>
     private let hostScreen: HostScreenProviding
-    private let makeDelegate: (PlayerMethodHandler) -> ShoplivePlayerDelegate
+    /// Concrete PlayerDelegateBridge (single implementation, no protocol - SMV-1899 design 9); nil once the engine emitters are gone.
+    private let makeDelegate: (PlayerMethodHandler) -> PlayerDelegateBridge?
 
     private var controller: BridgedPlayerViewController?
     /// The SDK holds the delegate weakly (Player:305/347) - keep it alive here (I-L-01).
-    private var liveDelegate: ShoplivePlayerDelegate?
+    private var liveDelegate: PlayerDelegateBridge?
 
     // Last confirmed settings, carried to every new controller (R2-N1).
     private var savedConfiguration: ShoplivePlayerConfiguration?
@@ -41,7 +42,7 @@ final class PlayerMethodHandler {
     private var savedOverlayUI: ShopliveOverlayUIMode?
 
     init(registry: PendingRequests<PendingRequest>, hostScreen: HostScreenProviding,
-         makeDelegate: @escaping (PlayerMethodHandler) -> ShoplivePlayerDelegate) {
+         makeDelegate: @escaping (PlayerMethodHandler) -> PlayerDelegateBridge?) {
         self.registry = registry
         self.hostScreen = hostScreen
         self.makeDelegate = makeDelegate
@@ -139,7 +140,7 @@ final class PlayerMethodHandler {
         if let ui = savedOverlayUI { configuration.overlay.ui = ui }
         let next = BridgedPlayerViewController(campaignKey: campaignKey, options: options, configuration: configuration)
         let delegate = makeDelegate(self)
-        next.delegate = delegate
+        if let delegate = delegate { next.delegate = delegate } else { next.delegate = DetachedPlayerDelegate.shared }
         next.onDismissed = { [weak self, weak next] in
             guard let self = self, let next = next else { return }
             self.controllerDidDismiss(next)
@@ -152,7 +153,18 @@ final class PlayerMethodHandler {
         if previous.presentingViewController == nil || previous.isBeingDismissed {
             // Not on screen (in-app PIP / already going away): present the new player first and retire the previous session
             // only after the presentation started, so a failed start leaves the running session alone (R4-01).
-            guard present(next) else { throw detachUnpresented(next) }
+            // SMV-1899 A0-7 (D6): mark the previous session's bridge retired before presenting, so a closed the SDK may send
+            // to it when the new playback starts (Android closes other sessions; iOS unverified) never reaches Dart.
+            // TODO(SDP-VERIFY): 요확인 — iOS SDK 3.0.4가 새 재생(present) 때 다른 controller 세션을 닫는지 실측, HostScreen.swift:40-41 present 거부 경로(top.present 후 presentingViewController == nil)에서 새 VC가 로드되는지 확인 · 근거 SMV-1899
+            let previousBridge = liveDelegate // `previous` is `controller` here (guard above)
+            previousBridge?.isRetired = true
+            guard present(next) else {
+                // Unmark only, no synthetic closed (design 9): the certain failure path is no host screen (HostScreen.swift:30),
+                // decided synchronously on the main thread before the new controller loads, so nothing can have closed the
+                // previous session meanwhile - it stays the current one. (The :40-41 present-refused path is in the TODO above.)
+                previousBridge?.isRetired = false
+                throw detachUnpresented(next)
+            }
             retire(previous)
             adopt(next, delegate: delegate, partial: partial, effective: effective, type: type)
             return nil
@@ -167,7 +179,7 @@ final class PlayerMethodHandler {
             // TODO(SDP-VERIFY): 요확인 — 이전 플레이어 dismiss 후 새 플레이어 present 실패는 start가 이미 성공을 반환해 Dart에 closed 상태로만 알림(스트리머 IM-m3와 같은 구조), 전환 화면 실측 · 근거 SMV-1749
             if !self.present(next) {
                 // Reason appRequest: replacing the broadcast is an app request, like SDK close() (SMV-1899 A4-3).
-                delegate.player(next, didReceive: .stateChanged(.closed(.appRequest))) // bridge -> playerDidClose releases it
+                delegate?.player(next, didReceive: .stateChanged(.closed(.appRequest))) // bridge -> playerDidClose releases it
                 if self.controller === next { self.release(next); self.controller = nil }
             }
         }
@@ -208,13 +220,17 @@ final class PlayerMethodHandler {
     /// Detaches the replaced controller first (its closed/dismiss events must not follow the new session's events), answers its
     /// pending coupon/custom requests once with the fallback, then closes it. Later requests from it get DetachedPlayerDelegate.
     private func retire(_ previous: BridgedPlayerViewController) {
+        // D6 (SMV-1899 A4-5): only this replacement path marks the bridge retired, so callbacks already queued for the main
+        // hop are dropped when they run. release() on the current session (playerDidClose, controllerDidDismiss, the
+        // synthetic-closed cleanup) does not mark it.
+        if previous === controller { liveDelegate?.isRetired = true }
         release(previous)
         if controller === previous { controller = nil }
         registry.flushAll()
         if !previous.state.isClosed { previous.close() }
     }
 
-    private func adopt(_ next: BridgedPlayerViewController, delegate: ShoplivePlayerDelegate, partial: Args?,
+    private func adopt(_ next: BridgedPlayerViewController, delegate: PlayerDelegateBridge?, partial: Args?,
                        effective: ShoplivePlayerConfiguration, type: String) {
         controller = next
         liveDelegate = delegate

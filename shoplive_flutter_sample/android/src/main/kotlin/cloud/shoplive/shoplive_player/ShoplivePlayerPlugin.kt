@@ -1,6 +1,8 @@
 package cloud.shoplive.shoplive_player
 
+import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import cloud.shoplive.player.ShoplivePlayer
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -35,6 +37,7 @@ class ShoplivePlayerPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodC
             registry = registry,
             portFactory = { activity -> SdkPlayerPort(ShoplivePlayer(activity)) },
             liveDelegate = { PlayerDelegateBridge(attach, generation, scheduler, events, requests, registry) },
+            drawableId = drawableResolver(binding.applicationContext),
         )
         this.registry = registry
         this.events = events
@@ -62,6 +65,17 @@ class ShoplivePlayerPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodC
         registry = null
         events = null
         requests = null
+    }
+
+    /**
+     * PIP 버튼 nativeImageName → 앱 drawable 리소스 ID(SMV-1899 A3). applicationContext만 캡처(Activity 누수 없음, host가 없어도 설정 가능).
+     * 이름 → ID만 하고 Drawable 로드는 SDK가 PIP 진입 때 한다(다크 모드·밀도 반영). 0(없음)은 PlayerMapper.resolveImage가 null로 바꾼다.
+     * getIdentifier는 이름 기반 조회라 lint가 권장하지 않지만, Dart에서 이름으로만 지정할 수 있어 대안이 없다.
+     */
+    @SuppressLint("DiscouragedApi")
+    private fun drawableResolver(context: Context): (String) -> Int? = { name ->
+        // TODO(SDP-VERIFY): 요확인 — release shrinkResources 시 Dart에서만 이름으로 참조하는 drawable이 유지되는지(keep.xml), applicationIdSuffix 빌드에서 packageName 기준 getIdentifier가 해석되는지 실측 · 근거 SMV-1899
+        context.resources.getIdentifier(name, "drawable", context.packageName)
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {

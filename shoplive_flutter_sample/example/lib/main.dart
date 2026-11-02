@@ -94,6 +94,8 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
   bool _muted = false;
   // OS PIP 사용 여부 — 끄면 in-App PIP(미니) 상태에서 홈으로 나갈 때 OS PIP 없이 백그라운드로 내려간다. 모든 start 경로에 함께 실린다.
   bool _osPipEnabled = true;
+  bool _pipCloseHidden = false;
+  bool _pipRestoreHidden = false;
   ShoplivePlayerState _playerState = ShoplivePlayerState.idle;
   // 마지막 closed의 이유(SDK 3.0.4). closed가 아닌 상태가 오면 비운다.
   ShopliveCloseReason? _closeReason;
@@ -484,10 +486,43 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
               'custom share ${enabled ? 'on' : 'off'}',
               () => _player.setConfiguration(ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: enabled))),
             ),
+          // in-App PIP 버튼(3.0.4) — 숨김 토글과 앱 네이티브 이미지(Android res/drawable · iOS Assets.xcassets의 sample_pip_*).
+          // 다음 start부터 적용(재생 중 PIP는 다음 진입부터 반영될 수 있음).
+          _button('PiP close ${_pipCloseHidden ? 'show' : 'hide'}', () async {
+            final hidden = !_pipCloseHidden;
+            await _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(closeButton: ShopliveButtonOptions(isHidden: hidden))));
+            setState(() => _pipCloseHidden = hidden);
+            return 'closeButton.isHidden=$hidden';
+          }),
+          _button('PiP restore ${_pipRestoreHidden ? 'show' : 'hide'}', () async {
+            final hidden = !_pipRestoreHidden;
+            await _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(restoreButton: ShopliveButtonOptions(isHidden: hidden))));
+            setState(() => _pipRestoreHidden = hidden);
+            return 'restoreButton.isHidden=$hidden';
+          }),
+          _button(
+            'PiP sample images',
+            () => _player.setConfiguration(const ShoplivePlayerConfiguration(
+              pip: ShoplivePipOptions(
+                closeButton: ShopliveButtonOptions(nativeImageName: 'sample_pip_close'),
+                restoreButton: ShopliveButtonOptions(nativeImageName: 'sample_pip_restore'),
+              ),
+            )),
+          ),
+          // 빈 이름은 해석 실패와 같다 — 경고 로그 후 이미지 없음(서버 에셋 → SDK 기본, 3.0.3 외형).
+          _button(
+            'PiP default images',
+            () => _player.setConfiguration(const ShoplivePlayerConfiguration(
+              pip: ShoplivePipOptions(
+                closeButton: ShopliveButtonOptions(nativeImageName: ''),
+                restoreButton: ShopliveButtonOptions(nativeImageName: ''),
+              ),
+            )),
+          ),
           _button('config', () async {
             final c = await _player.getConfiguration();
             return 'type=${c.type?.name} inAppPip=${c.pip?.isInAppPipEnabled} osPip=${c.pip?.isOSPipEnabled} dragOutClose=${c.pip?.isDragOutToCloseEnabled} '
-                'customShare=${c.navigation?.isCustomShareEnabled} muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
+                'customShare=${c.navigation?.isCustomShareEnabled} closeHidden=${c.pip?.closeButton?.isHidden} restoreHidden=${c.pip?.restoreButton?.isHidden} muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
           }),
         ]),
         _section('Streamer'),

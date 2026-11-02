@@ -10,6 +10,7 @@ export 'src/models/player_configuration.dart'
     show
         ShoplivePlayerConfiguration,
         ShoplivePipOptions,
+        ShopliveButtonOptions,
         ShopliveInsets,
         ShopliveSoundOptions,
         ShopliveAppearanceOptions,

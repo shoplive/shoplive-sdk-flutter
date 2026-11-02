@@ -81,6 +81,7 @@ class PlayerMethodHandlerTest {
         registry = registry,
         portFactory = { host -> FakePort(nextRunning).also { it.startFailure = nextFailure; created += host to it } },
         liveDelegate = { liveDelegate },
+        drawableId = { null },
     )
 
     private fun call(method: String, args: Map<String, Any?>? = null): Any? = handler.handle(method, Args.of(args))
@@ -392,7 +393,7 @@ class PlayerMethodHandlerTest {
         // case: A4-3 (R-A7) — 브릿지 합성 closed의 사유는 appRequest(SDK close()와 같은 값)
         assertEquals(listOf(cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST))), liveEvents)
         // 교체할 세션이 없던 첫 start 실패는 closed를 보내지 않는다
-        val fresh = PlayerMethodHandler<String>(registry, { FakePort().also { it.startFailure = IllegalStateException("sdk") } }, { liveDelegate })
+        val fresh = PlayerMethodHandler<String>(registry, { FakePort().also { it.startFailure = IllegalStateException("sdk") } }, { liveDelegate }, { null })
         liveEvents.clear()
         fresh.attachHost("A1")
         assertThrows(IllegalStateException::class.java) { fresh.handle("start", Args.of(mapOf("campaignKey" to "k"))) }
@@ -512,5 +513,75 @@ class PlayerMethodHandlerTest {
         )
         assertEquals("shoplive_player/events", PlayerContract.EVENTS_CHANNEL)
         assertEquals("shoplive_player/requests", PlayerContract.REQUESTS_CHANNEL)
+    }
+
+    // ---- D6: 교체된 세션의 delegate는 retired(SMV-1899 A4-5, R-A8) ----
+
+    private val gen = AttachGeneration().also { it.next() }
+    private val bridgeEvents = EventEmitter("events", scheduler)
+    private val bridgeRequests = EventEmitter("requests", scheduler)
+    private val eventSink = RecordingSink()
+    private val bridgeCoupons = mutableListOf<ShopliveCouponResult>()
+    private val bridged = PlayerMethodHandler<String>(
+        registry = registry,
+        portFactory = { host -> FakePort(nextRunning).also { it.startFailure = nextFailure; created += host to it } },
+        liveDelegate = { PlayerDelegateBridge(gen, gen.current, scheduler, bridgeEvents, bridgeRequests, registry) },
+        drawableId = { null },
+    )
+
+    @Test // case: A4-5 (R-A8) — 메인 hop 대기 중 retire되면 이전 세션 이벤트는 버리고 요청은 폴백 1회
+    fun retiredBridge_dropsPostedEvents_andFallsBackRequests() {
+        bridgeEvents.onListen(null, eventSink)
+        bridgeRequests.onListen(null, RecordingSink())
+        bridged.attachHost("A1")
+        bridged.handle("start", Args.of(mapOf("campaignKey" to "k1")))
+        val oldBridge = created.last().second.delegate!!
+        scheduler.onMain = false // SDK가 메인 밖에서 통지 → 메인 hop 예약
+        oldBridge.onEvent(FakePort(), cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST)))
+        oldBridge.onRequest(FakePort(), cloud.shoplive.player.ShoplivePlayerRequest.Coupon("c1") { bridgeCoupons += it })
+        scheduler.onMain = true
+        bridged.handle("start", Args.of(mapOf("campaignKey" to "k2"))) // retire(이전 세션)
+        scheduler.runPosted()
+        assertEquals(emptyList<Any?>(), eventSink.events)
+        assertEquals(1, bridgeCoupons.size)
+        assertEquals(ShopliveResultStatus.KEEP, bridgeCoupons.single().status)
+        assertEquals(0, registry.size())
+    }
+
+    @Test // case: A4-5 (R-A8, 교차검증 R3) — SDK가 스스로 닫아(endSession) delegate를 비운 인스턴스도 retire에서 표시된다
+    fun sdkClosedInstance_delegateCleared_isStillRetired() {
+        bridgeEvents.onListen(null, eventSink)
+        bridged.attachHost("A1")
+        bridged.handle("start", Args.of(mapOf("campaignKey" to "k1")))
+        val old = created.last().second
+        val oldBridge = old.delegate!!
+        old.running = false // endSession 모사: 토큰 반납 + delegate = null(3.0.4 ShoplivePlayer.kt endSession)
+        old.delegate = null
+        scheduler.onMain = false // 미뤄진 Closed(accessKeyChanged) 통지가 메인 hop 대기
+        oldBridge.onEvent(FakePort(), cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.ACCESS_KEY_CHANGED)))
+        scheduler.onMain = true
+        bridged.handle("start", Args.of(mapOf("campaignKey" to "k2")))
+        scheduler.runPosted()
+        assertEquals(emptyList<Any?>(), eventSink.events)
+    }
+
+    @Test // case: A4-5 (R-A8 비회귀) — detachHost(비실행 인스턴스 해제)는 retired를 세우지 않는다, 합성 closed는 새 bridge로 전달
+    fun detachHost_doesNotRetire_andSyntheticClosedIsDelivered() {
+        bridgeEvents.onListen(null, eventSink)
+        bridged.attachHost("A1")
+        nextFailure = IllegalStateException("sdk")
+        assertThrows(IllegalStateException::class.java) { bridged.handle("start", Args.of(mapOf("campaignKey" to "k0"))) }
+        val idleBridge = created.last().second.delegate!!
+        bridged.detachHost() // 비실행 port release(표시 없음)
+        idleBridge.onEvent(FakePort(), cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Loading))
+        assertEquals(listOf<Any?>(mapOf("type" to "stateChanged", "state" to "loading")), eventSink.events)
+        eventSink.events.clear()
+        nextFailure = null
+        bridged.attachHost("A1")
+        nextRunning = false
+        bridged.handle("start", Args.of(mapOf("campaignKey" to "k1")))
+        nextFailure = IllegalStateException("sdk")
+        assertThrows(IllegalStateException::class.java) { bridged.handle("start", Args.of(mapOf("campaignKey" to "k2"))) }
+        assertEquals(listOf<Any?>(mapOf("type" to "stateChanged", "state" to "closed", "closeReason" to "appRequest")), eventSink.events)
     }
 }
