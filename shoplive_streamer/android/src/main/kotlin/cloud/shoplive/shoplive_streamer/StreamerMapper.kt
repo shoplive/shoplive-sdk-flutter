@@ -16,7 +16,7 @@ internal object StreamerContract {
     const val WEB_PAGE_URL = "webPageUrl"
 }
 
-/** Shoplive streamer 3.0.3 타입 → wire (순수 함수). */
+/** Shoplive streamer 3.0.4 타입 → wire (순수 함수). */
 internal object StreamerMapper {
 
     /** wire(Dart ShopliveBroadcastState.name) ↔ SDK 상수(design §2.3). */

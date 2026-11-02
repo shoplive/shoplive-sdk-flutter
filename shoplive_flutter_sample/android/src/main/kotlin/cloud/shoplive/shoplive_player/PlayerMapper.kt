@@ -3,6 +3,7 @@ package cloud.shoplive.shoplive_player
 import cloud.shoplive.player.ShopliveAnalyticsInfo
 import cloud.shoplive.player.ShopliveCampaignInfo
 import cloud.shoplive.player.ShopliveCampaignStatus
+import cloud.shoplive.player.ShopliveCloseReason
 import cloud.shoplive.player.ShopliveConnectionState
 import cloud.shoplive.player.ShopliveCouponResult
 import cloud.shoplive.player.ShopliveCustomActionResult
@@ -79,14 +80,15 @@ internal object PlayerContract {
     const val PRESENTATION_STYLE = "presentationStyle"
 }
 
-/** Dart wire Map ↔ Shoplive player 3.0.3 타입 (순수 함수). */
+/** Dart wire Map ↔ Shoplive player 3.0.4 타입 (순수 함수). */
 internal object PlayerMapper {
     private val K = PlayerContract
 
     // ---- wire enum 테이블(design §2.3). Dart enum.name과 같은 camelCase ----
-    val PLAYER_STATE = mapOf(
-        "idle" to ShoplivePlayerState.IDLE, "loading" to ShoplivePlayerState.LOADING, "playing" to ShoplivePlayerState.PLAYING,
-        "paused" to ShoplivePlayerState.PAUSED, "inAppPip" to ShoplivePlayerState.IN_APP_PIP, "closed" to ShoplivePlayerState.CLOSED,
+    /** 닫힌 이유(SDK 3.0.4 `Closed.reason`). stateChanged(closed)의 `closeReason` 값(SMV-1899 A4). */
+    val CLOSE_REASON = mapOf(
+        "userAction" to ShopliveCloseReason.USER_ACTION, "appRequest" to ShopliveCloseReason.APP_REQUEST,
+        "accessKeyChanged" to ShopliveCloseReason.ACCESS_KEY_CHANGED,
     )
     val CAMPAIGN_STATUS = mapOf(
         "ready" to ShopliveCampaignStatus.READY, "live" to ShopliveCampaignStatus.LIVE, "ended" to ShopliveCampaignStatus.ENDED,
@@ -264,16 +266,37 @@ internal object PlayerMapper {
     private fun campaignInfoToWire(info: ShopliveCampaignInfo): Map<String, Any?> =
         mapOf("campaignKey" to info.campaignKey, "title" to info.title, "status" to wireOf(info.status, CAMPAIGN_STATUS))
 
+    /**
+     * 상태 → wire 이름(Dart ShoplivePlayerState.name). SDK 3.0.4에서 상태가 sealed(`Closed(reason)`)가 되어 상수 테이블·wireOf
+     * 동등 비교로는 Closed를 'unknown'으로 보낸다 → 하위 타입 전수 when. else를 두지 않는다: SDK가 상태를 더하면 컴파일 오류로
+     * 드러난다(SMV-1899 A0-1). getState·stateChanged가 이 함수 하나를 쓴다. 사유는 stateChanged에만 싣는다(getState는 'closed' — D2).
+     */
+    fun stateToWire(state: ShoplivePlayerState): String = when (state) {
+        ShoplivePlayerState.Idle -> "idle"
+        ShoplivePlayerState.Loading -> "loading"
+        ShoplivePlayerState.Playing -> "playing"
+        ShoplivePlayerState.Paused -> "paused"
+        ShoplivePlayerState.InAppPIP -> "inAppPip"
+        is ShoplivePlayerState.Closed -> "closed"
+    }
+
+    /** stateChanged: closed일 때만 `closeReason` 키(SMV-1899 A4 — 다른 상태엔 키 없음). */
+    private fun stateChangedToWire(state: ShoplivePlayerState): Map<String, Any?> {
+        val base = mapOf(TYPE to "stateChanged", "state" to stateToWire(state))
+        return if (state is ShoplivePlayerState.Closed) base + ("closeReason" to wireOf(state.reason, CLOSE_REASON)) else base
+    }
+
     fun eventToWire(event: ShoplivePlayerEvent): Map<String, Any?> = when (event) {
-        is ShoplivePlayerEvent.StateChanged -> mapOf(TYPE to "stateChanged", "state" to wireOf(event.state, PLAYER_STATE))
+        is ShoplivePlayerEvent.StateChanged -> stateChangedToWire(event.state)
         is ShoplivePlayerEvent.CampaignStatusChanged -> mapOf(TYPE to "campaignStatusChanged", "status" to wireOf(event.status, CAMPAIGN_STATUS))
         is ShoplivePlayerEvent.CampaignInfoReceived -> mapOf(TYPE to "campaignInfoReceived") + campaignInfoToWire(event.info)
         is ShoplivePlayerEvent.ConnectionStateChanged -> mapOf(TYPE to "connectionStateChanged", "state" to wireOf(event.state, CONNECTION_STATE))
         is ShoplivePlayerEvent.Playback -> playbackToWire(event.event)
         is ShoplivePlayerEvent.Error -> mapOf(TYPE to "error", "error" to Bridge.errorToWire(event.error))
         is ShoplivePlayerEvent.Analytics -> analyticsToWire(event.info)
+        // SDK 3.0.4: payload 없는 커맨드(LOGIN_REQUIRED 등)는 null로 온다 → iOS(PlayerMapper.swift nil → {})와 같은 {}로(SMV-1899 D4)
         is ShoplivePlayerEvent.WebCommandReceived ->
-            mapOf(TYPE to "webCommandReceived", "name" to event.name, "payload" to ValueNormalizer.normalize(event.payload))
+            mapOf(TYPE to "webCommandReceived", "name" to event.name, "payload" to ValueNormalizer.normalize(event.payload ?: emptyMap<String, Any?>()))
         is ShoplivePlayerEvent.UserNameUpdateRequested ->
             mapOf(TYPE to "userNameUpdateRequested", "payload" to ValueNormalizer.normalize(event.payload))
         else -> unknownToWire(event)

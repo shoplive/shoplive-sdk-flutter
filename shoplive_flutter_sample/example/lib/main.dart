@@ -14,9 +14,9 @@ import 'package:shoplive_streamer/shoplive_streamer.dart'
 
 import 'studio_login.dart';
 
-// Shoplive 3.0.3 데모(DRAFT-flutter-sdk-302-android S9, SMV-1749): shoplive_core · shoplive_player · shoplive_streamer.
+// Shoplive 3.0.4 데모(DRAFT-flutter-sdk-302-android S9, SMV-1749, SMV-1899): shoplive_core · shoplive_player · shoplive_streamer.
 //
-// 빌드 설정(Android): Shoplive SDK는 https://sdk.shoplive.cloud/maven-repo 에서 받는다(3.0.3은 Maven Central에 없음).
+// 빌드 설정(Android): Shoplive SDK는 https://sdk.shoplive.cloud/maven-repo 에서 받는다(3.0.4는 Maven Central에 없음).
 // 플러그인이 cloud.shoplive 그룹을 exclusiveContent로 이 저장소에만 묶는다(플러그인 android/build.gradle 참고).
 // minSdk 23, compileSdk 36, Java 17이 필요하다.
 //
@@ -52,7 +52,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(title: 'Shoplive 3.0.3 sample', home: ShopliveSamplePage());
+    return const MaterialApp(title: 'Shoplive 3.0.4 sample', home: ShopliveSamplePage());
   }
 }
 
@@ -62,7 +62,7 @@ class ShopliveSamplePage extends StatefulWidget {
   /// 테스트에서 가짜 로그인 서버를 넣기 위한 주입점. null이면 실제 스튜디오 로그인.
   final StudioLogin? studioLogin;
 
-  static const String title = 'Shoplive SDK 3.0.3 sample';
+  static const String title = 'Shoplive SDK 3.0.4 sample';
 
   @override
   State<ShopliveSamplePage> createState() => _ShopliveSamplePageState();
@@ -379,7 +379,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
                     expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                    title: const Text('고급 제어 (3.0.3 API 개별 호출)'),
+                    title: const Text('고급 제어 (3.0.4 API 개별 호출)'),
                     children: _advancedControls(),
                   ),
                 ],

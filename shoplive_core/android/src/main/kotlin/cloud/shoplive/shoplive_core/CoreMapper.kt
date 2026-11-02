@@ -225,7 +225,7 @@ internal class Args private constructor(private val map: Map<*, *>) {
 }
 
 // =====================================================================================
-// CoreMapper — Dart wire Map → Shoplive core 3.0.3 타입 (순수 함수, design.md rev2 §2.4·§2.6)
+// CoreMapper — Dart wire Map → Shoplive core 3.0.4 타입 (순수 함수, design.md rev2 §2.4·§2.6)
 // =====================================================================================
 
 /** 채널 `shoplive_core` 메서드명·인자 키(계약 단일 출처 — CoreContractTest가 목록을 고정). */

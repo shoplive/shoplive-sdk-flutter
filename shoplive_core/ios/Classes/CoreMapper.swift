@@ -1,7 +1,7 @@
 import Foundation
 import ShopliveCore
 
-/// Dart wire map -> Shoplive iOS core 3.0.3 types (design section 2.1). Pure functions.
+/// Dart wire map -> Shoplive iOS core 3.0.4 types (design section 2.1). Pure functions.
 enum CoreMapper {
     static let genderByWire: [String: ShopliveGender] = [
         "male": .male, "female": .female, "neutral": .neutral, "undefined": .undefined,

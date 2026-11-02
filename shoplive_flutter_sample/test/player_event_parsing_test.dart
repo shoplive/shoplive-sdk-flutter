@@ -48,4 +48,31 @@ void main() {
     expect(p('not a map'), isA<ShoplivePlayerUnknownEvent>());
     expect(p(null), isA<ShoplivePlayerUnknownEvent>());
   });
+
+  // case: A4-1 (R-D1, SMV-1899) — closed + closeReason 3종
+  test('stateChanged closed carries closeReason', () {
+    for (final r in ['userAction', 'appRequest', 'accessKeyChanged']) {
+      final e = p({'type': 'stateChanged', 'state': 'closed', 'closeReason': r}) as ShoplivePlayerStateChanged;
+      expect([e.state, e.closeReason?.name], [ShoplivePlayerState.closed, r]);
+    }
+  });
+
+  // case: A4-2 (R-D2, SMV-1899) — 미지 문자열·비문자열·null 값 → unknown, 키 없음 → null, closed 아닌 상태의 키 → null
+  test('closeReason: unknown values, missing key, non-closed state', () {
+    ShoplivePlayerStateChanged s(Map<String, Object?> m) => p({'type': 'stateChanged', ...m}) as ShoplivePlayerStateChanged;
+    expect(s({'state': 'closed', 'closeReason': 'kicked'}).closeReason, ShopliveCloseReason.unknown);
+    expect(s({'state': 'closed', 'closeReason': 3}).closeReason, ShopliveCloseReason.unknown);
+    expect(s({'state': 'closed', 'closeReason': null}).closeReason, ShopliveCloseReason.unknown);
+    expect(s({'state': 'closed'}).closeReason, isNull);
+    expect(s({'state': 'playing', 'closeReason': 'userAction'}).closeReason, isNull);
+    expect(s({'state': 'playing', 'closeReason': 'userAction'}).state, ShoplivePlayerState.playing);
+  });
+
+  // case: A4-4 (R-D4, SMV-1899) — ShoplivePlayerState enum 값·순서 불변(비파괴), 기존 생성자 호환
+  test('ShoplivePlayerState values unchanged and the constructor stays compatible', () {
+    expect(ShoplivePlayerState.values.map((v) => v.name).toList(), ['idle', 'loading', 'playing', 'paused', 'inAppPip', 'closed', 'unknown']);
+    expect(ShopliveCloseReason.values.map((v) => v.name).toList(), ['userAction', 'appRequest', 'accessKeyChanged', 'unknown']);
+    const legacy = ShoplivePlayerStateChanged(ShoplivePlayerState.closed);
+    expect(legacy.closeReason, isNull);
+  });
 }

@@ -2,11 +2,12 @@ import Foundation
 import UIKit
 import ShoplivePlayerSDK
 
-/// Dart wire map <-> Shoplive iOS player 3.0.3 types (design section 2.2-2.5). Pure functions.
+/// Dart wire map <-> Shoplive iOS player 3.0.4 types (design section 2.2-2.5). Pure functions.
 enum PlayerMapper {
     // MARK: wire tables (Dart enum.name, design section 2.4)
-    static let playerState: [String: ShoplivePlayerState] = [
-        "idle": .idle, "loading": .loading, "playing": .playing, "paused": .paused, "inAppPip": .inAppPIP, "closed": .closed,
+    /// Close reason of stateChanged(closed) (SDK 3.0.4 `.closed(reason)`), sent as `closeReason` (SMV-1899 A4).
+    static let closeReason: [String: ShopliveCloseReason] = [
+        "userAction": .userAction, "appRequest": .appRequest, "accessKeyChanged": .accessKeyChanged,
     ]
     static let campaignStatus: [String: ShopliveCampaignStatus] = ["ready": .ready, "live": .live, "ended": .ended]
     static let connectionState: [String: ShopliveConnectionState] = [
@@ -151,10 +152,28 @@ enum PlayerMapper {
                 "status": info.status.map { wireOf($0, campaignStatus) } as Any? ?? NSNull()] as [String: Any]
     }
 
+    /// State -> wire name (Dart ShoplivePlayerState.name). SDK 3.0.4 made closed carry a reason, so a table lookup by equality
+    /// would send "unknown" for it (SMV-1899 A0-1). Used by getState and stateChanged; the reason only goes with stateChanged.
+    /// ShoplivePlayerState is non-frozen: a future state becomes "unknown" (Dart ShoplivePlayerState.unknown).
+    static func stateToWire(_ state: ShoplivePlayerState) -> String {
+        switch state {
+        case .idle: return "idle"
+        case .loading: return "loading"
+        case .playing: return "playing"
+        case .paused: return "paused"
+        case .inAppPIP: return "inAppPip"
+        case .closed: return "closed"
+        @unknown default: return wireUnknown
+        }
+    }
+
     static func eventToWire(_ event: ShoplivePlayerEvent) -> [String: Any] {
         switch event {
         case .stateChanged(let state):
-            return ["type": "stateChanged", "state": wireOf(state, playerState)]
+            var wire: [String: Any] = ["type": "stateChanged", "state": stateToWire(state)]
+            // closeReason only for closed (SMV-1899 A4): other states carry no key.
+            if case .closed(let reason) = state { wire["closeReason"] = wireOf(reason, closeReason) }
+            return wire
         case .campaignStatusChanged(let status):
             return ["type": "campaignStatusChanged", "status": wireOf(status, campaignStatus)]
         case .campaignInfoReceived(let info):
@@ -257,5 +276,13 @@ enum PlayerMapper {
 
     private static func nonNullEnum<E>(_ a: Args, _ key: String, _ table: [String: E]) throws -> E? {
         try a.optWireEnum(key, table)
+    }
+}
+
+extension ShoplivePlayerState {
+    /// SDK 3.0.4 `.closed(reason)` for any reason - replaces the 3.0.3 `== .closed` comparisons (SMV-1899 A0-1).
+    var isClosed: Bool {
+        if case .closed = self { return true }
+        return false
     }
 }

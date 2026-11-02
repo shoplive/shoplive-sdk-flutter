@@ -56,6 +56,7 @@ final class PlayerMethodHandler {
             try running().play(campaignKey: key, options: options)
         case "stop": try running().stop()
         case "close": controller?.close() // no instance -> idempotent no-op
+        // TODO(SDP-VERIFY): 요확인 — iOS reload가 closed(appRequest)를 내면 브릿지가 플레이어를 닫음(3.0.2부터), 실측 후 후속 티켓 · 근거 SMV-1899
         case "reload": try running().reload()
         case "send":
             let command = try args.requireString("command")
@@ -81,13 +82,14 @@ final class PlayerMethodHandler {
         case "enterPictureInPicture": try running().enterPictureInPicture()
         case "exitPictureInPicture": try running().exitPictureInPicture()
         case "isInPictureInPicture": return controller?.isInPictureInPicture ?? false
-        case "getState": return wireOf(controller?.state ?? .idle, PlayerMapper.playerState)
+        case "getState": return PlayerMapper.stateToWire(controller?.state ?? .idle) // "closed" without the reason (SMV-1899 D2)
         case "getCurrentCampaign": return PlayerMapper.campaignToWire(controller?.currentCampaign)
         case "isRunning": return isRunning
         case "setConfiguration":
             let (merged, type) = try PlayerMapper.mergeConfiguration(currentConfiguration(), currentType: savedType,
                                                                       partial: try args.requireArgs("configuration"))
-            // TODO(SDP-VERIFY): 요확인 — 실행 중 setConfiguration 효과(SDK가 무시하는지) · 근거 SMV-1749
+            // A running controller takes the value from its next start/play/reload (SDK 3.0.4 rule; Android 3.0.4
+            // ShoplivePlayerControlling KDoc "same as iOS 3.0.4" - SMV-1899 A0-4; timing is a manual verification item).
             controller?.configuration = merged
             savedConfiguration = merged
             savedType = type
@@ -128,9 +130,10 @@ final class PlayerMethodHandler {
         }
         // Check the host before anything is closed: a start without a host screen must not end the running session.
         guard hostScreen.topViewController() != nil else { throw noHostScreen() }
-        // SMV-1749: every start opens a new controller carrying this call's effective configuration. A started SDK player does not
-        // take a new configuration (Android SDK 3.0.3 ConfigurationGuard accepts it only while IDLE; the iOS setter's effect on a
-        // running controller is unverified - former I-S-01), so the IOS-M1 "switch campaign in the same controller" path is gone.
+        // SMV-1749: every start opens a new controller carrying this call's effective configuration. SDK 3.0.4 accepts a new
+        // configuration at any time but applies it from the next start/play/reload (SMV-1899 A0-4); the new controller per start is
+        // kept because it isolates the previous session's events and requests (retire), so there is still no IOS-M1
+        // "switch campaign in the same controller" path.
         var configuration = effective
         if let mode = savedResizeMode { configuration.appearance.resizeMode = mode }
         if let ui = savedOverlayUI { configuration.overlay.ui = ui }
@@ -163,7 +166,8 @@ final class PlayerMethodHandler {
             guard let self = self, let next = next, self.controller === next else { return }
             // TODO(SDP-VERIFY): 요확인 — 이전 플레이어 dismiss 후 새 플레이어 present 실패는 start가 이미 성공을 반환해 Dart에 closed 상태로만 알림(스트리머 IM-m3와 같은 구조), 전환 화면 실측 · 근거 SMV-1749
             if !self.present(next) {
-                delegate.player(next, didReceive: .stateChanged(.closed)) // bridge -> playerDidClose releases it
+                // Reason appRequest: replacing the broadcast is an app request, like SDK close() (SMV-1899 A4-3).
+                delegate.player(next, didReceive: .stateChanged(.closed(.appRequest))) // bridge -> playerDidClose releases it
                 if self.controller === next { self.release(next); self.controller = nil }
             }
         }
@@ -176,7 +180,7 @@ final class PlayerMethodHandler {
     private var isRunning: Bool {
         guard let c = controller else { return false }
         // TODO(SDP-VERIFY): 요확인 - closed 이후 VC가 스스로 dismiss 되는지, in-app PIP 중 VC 상태 · 근거 DRAFT-flutter-sdk-302-ios/D-7 · 자동 통과 금지(실측)
-        return c.state != .closed
+        return !c.state.isClosed
     }
 
     private func running() throws -> BridgedPlayerViewController {
@@ -196,7 +200,7 @@ final class PlayerMethodHandler {
 
     private func controllerDidDismiss(_ dismissed: BridgedPlayerViewController) {
         // Dismissed without a closed state may be the SDK moving to in-app PIP - keep it then (I-R-02).
-        guard dismissed === controller, dismissed.state == .closed else { return }
+        guard dismissed === controller, dismissed.state.isClosed else { return }
         release(dismissed)
         controller = nil
     }
@@ -207,7 +211,7 @@ final class PlayerMethodHandler {
         release(previous)
         if controller === previous { controller = nil }
         registry.flushAll()
-        if previous.state != .closed { previous.close() }
+        if !previous.state.isClosed { previous.close() }
     }
 
     private func adopt(_ next: BridgedPlayerViewController, delegate: ShoplivePlayerDelegate, partial: Args?,

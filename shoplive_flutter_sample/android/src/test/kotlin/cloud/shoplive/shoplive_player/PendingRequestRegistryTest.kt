@@ -175,7 +175,7 @@ class PendingRequestRegistryTest {
     @Test // case: N-03
     fun events_emitted_whenListening() {
         events.onListen(null, eventSink)
-        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.LOADING))
+        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Loading))
         assertEquals(mapOf("type" to "stateChanged", "state" to "loading"), eventSink.events.single())
     }
 
@@ -184,7 +184,7 @@ class PendingRequestRegistryTest {
         events.onListen(null, eventSink)
         requests.onListen(null, requestSink)
         gen.next() // 엔진 detach 이후
-        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.LOADING))
+        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Loading))
         bridge.onRequest(FakePort(), coupon())
         assertEquals(0, eventSink.events.size)
         assertEquals(0, requestSink.events.size)
@@ -206,7 +206,7 @@ class PendingRequestRegistryTest {
         DetachedDelegate.onRequest(FakePort(), coupon())
         DetachedDelegate.onRequest(FakePort(), action())
         DetachedDelegate.onRequest(FakePort(), ShoplivePlayerRequest.Navigation("u"))
-        DetachedDelegate.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.IDLE))
+        DetachedDelegate.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Idle))
         assertEquals(1, couponResults.size)
         assertEquals(1, actionResults.size)
     }

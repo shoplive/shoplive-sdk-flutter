@@ -7,6 +7,7 @@ import cloud.shoplive.player.ShopliveBrand
 import cloud.shoplive.player.ShopliveCampaign
 import cloud.shoplive.player.ShopliveCampaignInfo
 import cloud.shoplive.player.ShopliveCampaignStatus
+import cloud.shoplive.player.ShopliveCloseReason
 import cloud.shoplive.player.ShopliveConnectionState
 import cloud.shoplive.player.ShopliveNavigationAction
 import cloud.shoplive.player.ShopliveOverlayUIMode
@@ -36,7 +37,7 @@ class PlayerMapperTest {
     @Test // case: B-01, B-02
     fun wireTables_coverAllSdkConstants() {
         fun <E> check(table: Map<String, E>, all: Array<E>) = assertEquals(all.toSet(), table.values.toSet())
-        check(PlayerMapper.PLAYER_STATE, ShoplivePlayerState.values())
+        check(PlayerMapper.CLOSE_REASON, ShopliveCloseReason.values()) // case: A4-1 (R-A2) — 사유 테이블이 SDK enum 전체를 덮는다
         check(PlayerMapper.CAMPAIGN_STATUS, ShopliveCampaignStatus.values())
         check(PlayerMapper.CONNECTION_STATE, ShopliveConnectionState.values())
         check(PlayerMapper.RESIZE_MODE, ShopliveResizeMode.values())
@@ -50,9 +51,19 @@ class PlayerMapperTest {
         check(PlayerMapper.ALERT_TYPE, ShopliveResultAlertType.values())
     }
 
+    @Test // case: A0-1 (R-A1) — 3.0.4 sealed 상태 6종이 전부 Dart enum name으로(unknown 없음). Closed는 사유와 무관하게 'closed'
+    fun stateToWire_allSixStates_notUnknown() {
+        assertEquals("idle", PlayerMapper.stateToWire(ShoplivePlayerState.Idle))
+        assertEquals("loading", PlayerMapper.stateToWire(ShoplivePlayerState.Loading))
+        assertEquals("playing", PlayerMapper.stateToWire(ShoplivePlayerState.Playing))
+        assertEquals("paused", PlayerMapper.stateToWire(ShoplivePlayerState.Paused))
+        assertEquals("inAppPip", PlayerMapper.stateToWire(ShoplivePlayerState.InAppPIP))
+        for (r in ShopliveCloseReason.values()) assertEquals("closed", PlayerMapper.stateToWire(ShoplivePlayerState.Closed(r)))
+    }
+
     @Test // case: B-01
     fun wireNames_areCamelCase() {
-        assertEquals("inAppPip", wireOf(ShoplivePlayerState.IN_APP_PIP, PlayerMapper.PLAYER_STATE))
+        assertEquals("inAppPip", PlayerMapper.stateToWire(ShoplivePlayerState.InAppPIP))
         assertEquals("ratio9x16", wireOf(ShoplivePipRatio.RATIO_9X16, PlayerMapper.PIP_RATIO))
         assertEquals("builtIn", wireOf(ShopliveOverlayUIMode.BUILT_IN, PlayerMapper.OVERLAY_UI))
         assertEquals("bottomRight", wireOf(ShoplivePipPosition.BOTTOM_RIGHT, PlayerMapper.PIP_POSITION))
@@ -283,9 +294,35 @@ class PlayerMapperTest {
 
     // ---- 이벤트 → wire (design §2.5) ----
 
+    @Test // case: A4-1·A4-2 (R-A1) — closed일 때만 closeReason 키(3종 = Dart ShopliveCloseReason name), 다른 상태엔 키 없음
+    fun stateChanged_closed_carriesCloseReason_only() {
+        val expected = mapOf(
+            ShopliveCloseReason.USER_ACTION to "userAction",
+            ShopliveCloseReason.APP_REQUEST to "appRequest",
+            ShopliveCloseReason.ACCESS_KEY_CHANGED to "accessKeyChanged",
+        )
+        for ((reason, wire) in expected) {
+            assertEquals(
+                mapOf("type" to "stateChanged", "state" to "closed", "closeReason" to wire),
+                PlayerMapper.eventToWire(ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(reason))),
+            )
+        }
+        for (s in listOf(ShoplivePlayerState.Idle, ShoplivePlayerState.Loading, ShoplivePlayerState.Playing, ShoplivePlayerState.Paused, ShoplivePlayerState.InAppPIP)) {
+            assertEquals(false, PlayerMapper.eventToWire(ShoplivePlayerEvent.StateChanged(s)).containsKey("closeReason"))
+        }
+    }
+
+    @Test // case: A0-2 (R-A4, D4) — 3.0.4 payload 없는 웹 커맨드(null)는 iOS와 같은 {}로(Unknown 아님)
+    fun webCommand_nullPayload_isEmptyMap() {
+        assertEquals(
+            mapOf("type" to "webCommandReceived", "name" to "LOGIN_REQUIRED", "payload" to emptyMap<String, Any?>()),
+            PlayerMapper.eventToWire(ShoplivePlayerEvent.WebCommandReceived("LOGIN_REQUIRED", null)),
+        )
+    }
+
     @Test // case: N-03
     fun events_allNineTypes() {
-        assertEquals(mapOf("type" to "stateChanged", "state" to "playing"), PlayerMapper.eventToWire(ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.PLAYING)))
+        assertEquals(mapOf("type" to "stateChanged", "state" to "playing"), PlayerMapper.eventToWire(ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Playing)))
         assertEquals(mapOf("type" to "campaignStatusChanged", "status" to "live"), PlayerMapper.eventToWire(ShoplivePlayerEvent.CampaignStatusChanged(ShopliveCampaignStatus.LIVE)))
         assertEquals(
             mapOf("type" to "campaignInfoReceived", "campaignKey" to "k", "title" to null, "status" to null),

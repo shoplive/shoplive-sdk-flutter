@@ -58,7 +58,12 @@ sealed class ShoplivePlayerEvent {
   static ShoplivePlayerEvent? _parse(String type, Map<String, Object?> m) {
     switch (type) {
       case 'stateChanged':
-        return ShoplivePlayerStateChanged(parseWireEnum(ShoplivePlayerState.values, m['state'], unknown: ShoplivePlayerState.unknown));
+        final state = parseWireEnum(ShoplivePlayerState.values, m['state'], unknown: ShoplivePlayerState.unknown);
+        // closeReason은 closed일 때만(SMV-1899 A4): 키 없음 = null, 미지·비문자열·null 값 = unknown. 다른 상태의 키는 무시.
+        final closeReason = state == ShoplivePlayerState.closed && m.containsKey('closeReason')
+            ? parseWireEnum(ShopliveCloseReason.values, m['closeReason'], unknown: ShopliveCloseReason.unknown)
+            : null;
+        return ShoplivePlayerStateChanged(state, closeReason: closeReason);
       case 'campaignStatusChanged':
         return ShopliveCampaignStatusChanged(
           parseWireEnum(ShopliveCampaignStatus.values, m['status'], unknown: ShopliveCampaignStatus.unknown),
@@ -118,8 +123,12 @@ sealed class ShoplivePlayerEvent {
 }
 
 class ShoplivePlayerStateChanged extends ShoplivePlayerEvent {
-  const ShoplivePlayerStateChanged(this.state);
+  const ShoplivePlayerStateChanged(this.state, {this.closeReason});
   final ShoplivePlayerState state;
+
+  /// [state]가 [ShoplivePlayerState.closed]일 때 닫힌 이유(SDK 3.0.4+). 다른 상태에서는 항상 null.
+  /// closed인데 null이면 네이티브가 이유를 보내지 않은 경우다. `getState()`는 이유를 주지 않는다.
+  final ShopliveCloseReason? closeReason;
 }
 
 class ShopliveCampaignStatusChanged extends ShoplivePlayerEvent {

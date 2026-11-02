@@ -1,5 +1,6 @@
 package cloud.shoplive.shoplive_player
 
+import cloud.shoplive.player.ShopliveCloseReason
 import cloud.shoplive.player.ShopliveOverlayUIMode
 import cloud.shoplive.player.ShoplivePlayOptions
 import cloud.shoplive.player.ShoplivePlayer
@@ -113,7 +114,7 @@ internal class PlayerMethodHandler<H : Any>(
         k.ENTER_PIP -> running().enterPictureInPicture().let { null }
         k.EXIT_PIP -> running().exitPictureInPicture().let { null }
         k.IS_IN_PIP -> port?.isInPictureInPicture ?: false
-        k.GET_STATE -> wireOf(port?.state ?: ShoplivePlayerState.IDLE, PlayerMapper.PLAYER_STATE)
+        k.GET_STATE -> PlayerMapper.stateToWire(port?.state ?: ShoplivePlayerState.Idle)
         k.GET_CURRENT_CAMPAIGN -> PlayerMapper.campaignToWire(port?.currentCampaign)
         k.IS_RUNNING -> port?.isRunning ?: false
         k.SET_CONFIGURATION -> {
@@ -122,7 +123,8 @@ internal class PlayerMethodHandler<H : Any>(
             savedConfiguration = merged
             null
         }
-        // 다음 start에 쓰일 설정(보관값 우선). 실행 중 SET은 SDK가 무시하므로(ConfigurationGuard) 인스턴스 값이 아니라 보관값을 돌려준다(iOS 같은 의미).
+        // 다음 start에 쓰일 설정(보관값 우선 — iOS 같은 의미). SDK 3.0.4는 실행 중 대입도 받지만 start·play·reload 회차부터 적용한다
+        // (shareScheme·pip 판단만 즉시, ShoplivePlayer.kt 3.0.4 configuration KDoc) → 다음 회차에 쓰일 보관값이 곧 인스턴스 값이다(SMV-1899 A0-4).
         k.GET_CONFIGURATION -> PlayerMapper.configurationToWire(currentConfiguration())
         k.SET_REQUEST_TIMEOUT -> registry.setTimeoutMs(
             args.optLong(k.TIMEOUT_MS) ?: throw BridgeArgumentException(k.TIMEOUT_MS, "Int", "missing"),
@@ -166,19 +168,21 @@ internal class PlayerMethodHandler<H : Any>(
     }
 
     private fun notifyClosed(p: PlayerPort) = Bridge.guardCallback(TAG, "notifyClosed") {
-        p.delegate?.onEvent(p, ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.CLOSED))
+        // 사유 = appRequest: 다른 방송으로의 교체는 SDK close()와 같은 APP_REQUEST(ShopliveCloseReason KDoc, SMV-1899 A4-3)
+        p.delegate?.onEvent(p, ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST)))
     }
 
     /**
      * start마다 effective configuration이 새 세션에 적용되도록 인스턴스를 고른다(SMV-1749, T-01·T-04 해소).
-     * SDK 3.0.3 근거(javap): ConfigurationGuard.set은 state == IDLE일 때만 값을 받고(그 외 Log.w 후 무시 — start의 설정 인자 포함),
-     * state는 생성 시에만 IDLE이며 close 후에는 CLOSED로 남는다 → 한 번 start된 인스턴스는 설정을 바꿀 수 없다.
+     * 3.0.3 근거였던 ConfigurationGuard(Idle일 때만 설정 수락)는 SDK 3.0.4에서 사라졌다(ShoplivePlayer.kt 3.0.4 configuration KDoc).
+     * 그래도 매 start 새 인스턴스 정책은 유지한다: 이전 세션의 이벤트·요청을 retire(DetachedDelegate 선부착 + flushAll)로 격리하는
+     * 근거이기 때문이다(SMV-1899 A0-4). state는 생성 시에만 Idle이며 close 후에는 Closed(reason)로 남는다.
      * SessionRegistry는 인스턴스별 등록(Map)이라 새 인스턴스 생성에 제약이 없다.
-     * 그래서 IDLE이 아니거나 호스트가 바뀐 인스턴스는 해제 후 close하고 현재 호스트로 새로 만든다.
+     * 그래서 Idle이 아니거나 호스트가 바뀐 인스턴스는 해제 후 close하고 현재 호스트로 새로 만든다.
      */
     private fun portForStart(currentHost: H): PlayerPort {
         val p = port ?: return create(currentHost)
-        if (p.state == ShoplivePlayerState.IDLE && boundHost?.get() === currentHost) return p
+        if (p.state == ShoplivePlayerState.Idle && boundHost?.get() === currentHost) return p
         retire(p)
         return create(currentHost)
     }
@@ -193,7 +197,7 @@ internal class PlayerMethodHandler<H : Any>(
         release(p)
         registry.flushAll()
         // TODO(SDP-VERIFY): 요확인 — 이전 전체화면 Activity finish(비동기)와 새 start의 Activity 실행이 겹칠 때 화면 전환(특히 같은 campaignKey) 실측 · 근거 SMV-1749
-        if (p.isRunning) p.close() // SDK isRunning = state ∉ {IDLE, CLOSED}. 그 밖의 close는 SDK에서 no-op(sessionToken null)
+        if (p.isRunning) p.close() // SDK isRunning = sessionToken != null(3.0.4 ShoplivePlayer.kt:439). 그 밖의 close는 SDK에서 no-op
     }
 
     // ---- 인스턴스 ----

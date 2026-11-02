@@ -2,6 +2,7 @@ package cloud.shoplive.shoplive_player
 
 import cloud.shoplive.player.ShopliveCampaignInfo
 import cloud.shoplive.player.ShopliveCampaignStatus
+import cloud.shoplive.player.ShopliveCloseReason
 import cloud.shoplive.player.ShopliveCouponResult
 import cloud.shoplive.player.ShopliveCustomActionResult
 import cloud.shoplive.player.ShopliveOverlayUIMode
@@ -22,7 +23,7 @@ import org.junit.Test
 
 internal class FakePort(var running: Boolean = false) : PlayerPort {
     val calls = mutableListOf<String>()
-    /** SDK 3.0.3 모델: 생성 시에만 IDLE, start 이후 실행 중이 아니면 CLOSED(되돌아가지 않음). */
+    /** SDK 3.0.3·3.0.4 모델: 생성 시에만 Idle, start 이후 실행 중이 아니면 Closed(되돌아가지 않음). close() = APP_REQUEST(ShoplivePlayer.kt:1198). */
     var started = running
     var lastOptions: ShoplivePlayOptions? = null
     var startedWithConfiguration: ShoplivePlayerConfiguration? = null
@@ -40,9 +41,9 @@ internal class FakePort(var running: Boolean = false) : PlayerPort {
         set(value) { calls += "setOverlayUI"; field = value }
     override val isInPictureInPicture: Boolean get() = false
     override val state: ShoplivePlayerState get() = when {
-        running -> ShoplivePlayerState.PLAYING
-        started -> ShoplivePlayerState.CLOSED
-        else -> ShoplivePlayerState.IDLE
+        running -> ShoplivePlayerState.Playing
+        started -> ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST)
+        else -> ShoplivePlayerState.Idle
     }
     override val currentCampaign: ShopliveCampaignInfo? get() = campaign
 
@@ -320,7 +321,7 @@ class PlayerMethodHandlerTest {
         liveEvents.clear()
         call("start", mapOf("campaignKey" to "k2", "configuration" to mapOf("type" to "live")))
         // R5-02: 교체 성공 경로에서는 (가짜) closed를 보내지 않는다 — 이전 세션 이벤트는 DetachedDelegate로 차단
-        assertEquals(emptyList<Any>(), liveEvents.filter { it == cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.CLOSED) })
+        assertEquals(emptyList<Any>(), liveEvents.filter { it is cloud.shoplive.player.ShoplivePlayerEvent.StateChanged && it.state is ShoplivePlayerState.Closed })
         val live = port()
         assertEquals(2, created.size)
         // create가 보관 설정을 먼저 넣고(IDLE이라 SDK가 받음) effective로 3인자 start 1회
@@ -388,7 +389,8 @@ class PlayerMethodHandlerTest {
         liveEvents.clear()
         nextFailure = IllegalStateException("sdk")
         assertThrows(IllegalStateException::class.java) { call("start", mapOf("campaignKey" to "k2")) }
-        assertEquals(listOf(cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.CLOSED)), liveEvents)
+        // case: A4-3 (R-A7) — 브릿지 합성 closed의 사유는 appRequest(SDK close()와 같은 값)
+        assertEquals(listOf(cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST))), liveEvents)
         // 교체할 세션이 없던 첫 start 실패는 closed를 보내지 않는다
         val fresh = PlayerMethodHandler<String>(registry, { FakePort().also { it.startFailure = IllegalStateException("sdk") } }, { liveDelegate })
         liveEvents.clear()
@@ -405,12 +407,13 @@ class PlayerMethodHandlerTest {
         assertEquals("live", (call("getConfiguration") as Map<*, *>)["type"])
     }
 
-    @Test // case: SMV-1749 — close 후 같은 호스트에서 다시 start해도 CLOSED 인스턴스를 재사용하지 않는다(SDK가 설정을 거부)
+    @Test // case: SMV-1749, A4-6 (R-A7) — close 후 같은 호스트에서 다시 start해도 Closed 인스턴스를 재사용하지 않는다(재사용 조건은 Idle뿐)
     fun closedInstance_sameHost_startCreatesNewPort() {
         handler.attachHost("A1")
         call("start", mapOf("campaignKey" to "k", "configuration" to mapOf("type" to "preview")))
         val first = port()
         call("close")
+        assertEquals("closed", call("getState")) // A4-4: getState는 사유 없이 'closed'
         call("start", mapOf("campaignKey" to "k", "configuration" to mapOf("type" to "live")))
         assertEquals(2, created.size)
         assertEquals(listOf("start3", "close"), first.calls) // CLOSED라 close를 다시 부르지 않는다
