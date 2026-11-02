@@ -1,6 +1,6 @@
 # shoplive_player
 
-Fullscreen live/VOD player for Flutter, built on Shoplive Android SDK **3.0.3** (`cloud.shoplive:shoplive-player-sdk`).
+Fullscreen live/VOD player for Flutter, built on Shoplive Android SDK **3.0.4** (`cloud.shoplive:shoplive-player-sdk`).
 
 Shoplive for Flutter ships as three packages:
 
@@ -26,7 +26,7 @@ Apps that only play videos add `shoplive_player`, and streamer binaries stay out
 
 ```yaml
 dependencies:
-  shoplive_player: 3.0.3   # includes shoplive_core
+  shoplive_player: 3.0.4   # includes shoplive_core
 ```
 
 > `shoplive_core`, `shoplive_player` and `shoplive_streamer` wrap the same SDK release and must use the same version. `shoplive_player` and `shoplive_streamer` pin `shoplive_core` to their own version. (Maintainers: publish `shoplive_core` first, then `shoplive_player` and `shoplive_streamer`.)
@@ -35,7 +35,7 @@ dependencies:
 
 Shoplive Android SDK 3.x is served from `https://sdk.shoplive.cloud/maven-repo`.
 
-**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.3 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
+**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.4 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
 
 ### (a) Default: automatic
 
@@ -88,9 +88,9 @@ If your build resolves dependencies from `settings.gradle(.kts)` `dependencyReso
 ## iOS setup
 
 - **Minimum iOS 15.** Set `platform :ios, '15.0'` in `ios/Podfile`. Flutter's template uses a lower value, and `pod install` fails with "higher minimum deployment target" until you change it.
-- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.3 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.3`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
+- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.4 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.4`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
   - Network: the first install needs access to `github.com` and its download host. `curl` honours `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`.
-  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.3/<Name>.xcframework.zip`.
+  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.4/<Name>.xcframework.zip`.
   - Offline / CI: set `SHOPLIVE_IOS_SDK_DIR` to a folder that contains the five release zips (`ShopliveCore`, `ShoplivePlayerSDK`, `ShopliveStreamerSDK`, `ShopLiveWebRTCHelperSDK`, `WebRTC` `.xcframework.zip`). To avoid downloading on every CI run, cache the pub cache (key it by SDK version).
   - The plugin folder must be writable, because the frameworks have to live inside it. With a read-only pub cache, point `PUB_CACHE` at a writable folder and run `flutter pub get` again.
 - If you run `pod install` yourself, use a UTF-8 locale (`export LANG=en_US.UTF-8`); CocoaPods fails otherwise.
@@ -110,9 +110,10 @@ final player = ShoplivePlayer.instance;
 // 2. Subscribe while the player is in use
 player.events.listen((event) {
   switch (event) {
-    case ShoplivePlayerStateChanged(:final state): print('state: $state');
+    case ShoplivePlayerStateChanged(:final state, :final closeReason): print('state: $state reason: $closeReason');
+    case ShoplivePlayerShareRequested(:final info): openShareSheet(info.url, info.title); // only with isCustomShareEnabled
     case ShoplivePlayerErrorEvent(:final error): print('error: ${error.code}');
-    default: break;
+    default: break; // without a default, every ShoplivePlayerEvent subtype must be listed
   }
 });
 player.navigationRequests.listen((r) => openProductPage(r.url));
@@ -133,12 +134,84 @@ await player.close();           // always succeeds
 
 ### Configuration
 
-- `start(configuration:)` and `setConfiguration` **merge** the given fields on top of the current settings. Omitted fields keep their values. `getConfiguration()` returns the full configuration that the next `start` uses, except `overlay.ui`: a later `setOverlayUI` overrides it on the next `start`, so read that value with `getOverlayUI()`. A running session keeps the settings it started with: the SDK ignores configuration changes after playback has started, so changes made while a session is running apply to the next `start`.
+- `start(configuration:)` and `setConfiguration` **merge** the given fields on top of the current settings. Omitted fields keep their values. `getConfiguration()` returns the full configuration that the next `start` uses, except `overlay.ui`: a later `setOverlayUI` overrides it on the next `start`, so read that value with `getOverlayUI()`. Changes made while a session is running apply from the next `start`, `play` or `reload` (SDK 3.0.4; `navigation.shareScheme` applies from the next share tap). Up to 3.0.3, Android ignored them until the next `start`.
 - Settings made before the first `start`, or across a screen recreation, are kept and applied to the next player instance.
-- Every `start` opens a new player session with the merged configuration. If a session is open (fullscreen or in-app PIP), it is closed first; its `closed` event is not delivered, and the new session's events follow. If the previous session was closed and the new one then fails to start, one `closed` state is sent instead. If the start fails before that (invalid argument, no host screen), the running session is left as it is. The SDK does not accept configuration changes once playback has started, so use `play` to switch campaigns inside the running session with its current settings.
+- Every `start` opens a new player session with the merged configuration. If a session is open (fullscreen or in-app PIP), it is closed first; its `closed` event is not delivered, and the new session's events follow. If the previous session was closed and the new one then fails to start, one `closed` state is sent instead. If the start fails before that (invalid argument, no host screen), the running session is left as it is. To switch campaigns inside the running session, use `play`; it keeps the session and uses the current settings. Android: a new `start` also closes other Shoplive player sessions in the app (a native player, or the player of another Flutter engine); those get `closed` with `appRequest`.
 - `presentationStyle: pip` requires `pip.isInAppPipEnabled: true` in the merged configuration. Otherwise `start` fails with `INVALID_ARGUMENT`.
 - `pip.isDragOutToCloseEnabled` (SDK 3.0.3+, Android and iOS): whether the in-app PIP window closes when dragged off the screen. Omitted keeps the current value (the SDK default is `true` on both platforms).
 - `configuration.android` holds Android-only options.
+
+### Close reason
+
+When the current session closes, `ShoplivePlayerStateChanged.state` is `closed` and `closeReason` tells why (SDK 3.0.4+, Android and iOS). For other states `closeReason` is `null`. `ShoplivePlayerState` itself is unchanged, so existing `state == ShoplivePlayerState.closed` checks keep working.
+
+| `closeReason` | When |
+|---|---|
+| `userAction` | The viewer closed it (close button, dragging the in-app PIP window off the screen, system PIP close, back) |
+| `appRequest` | Your app or the SDK closed it (`stop`, `close`, the stop inside `reload`, replacement by another broadcast, SDK internal stop). Also the `closed` the plugin sends when a replacing `start` fails |
+| `accessKeyChanged` | `Shoplive.initialize` was called with a different access key; the player started with the old key closed. Start it again if needed (Android: `ShopliveUser.token` users call `setUser` again) |
+| `unknown` | A reason this plugin version does not know |
+
+```dart
+player.events.listen((event) {
+  if (event case ShoplivePlayerStateChanged(state: ShoplivePlayerState.closed, :final closeReason)) {
+    if (closeReason == ShopliveCloseReason.accessKeyChanged) restartPlayerForNewKey();
+  }
+});
+```
+
+- `getState()` returns `closed` without a reason; use the event.
+- When `start` replaces a session, the previous session's `closed` is not delivered (same as 3.0.3).
+- `Shoplive.initialize` (core) and the player `closed` event use different channels, so their order in Dart is not guaranteed. Rely on `stateChanged`.
+
+### Custom share
+
+Set `navigation.isCustomShareEnabled: true` to handle sharing in your app (SDK 3.0.4+, Android and iOS). Tapping share in the player then does not open the SDK share sheet; `events` delivers one `ShoplivePlayerShareRequested` per share request instead. `false` or omitted keeps the SDK sheet.
+
+```dart
+await player.start('CAMPAIGN_KEY',
+    configuration: const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: true)));
+
+player.events.listen((event) {
+  if (event case ShoplivePlayerShareRequested(:final info)) {
+    final url = info.url;            // shareScheme, otherwise the web share URL; null if neither exists
+    if (url == null) return;         // share without a link, or ignore
+    showMyShareSheet(url, subject: info.title);   // also: campaignKey, descriptionText, thumbnailUrl (all nullable)
+  }
+});
+```
+
+- **Keep a listener on `events` while the setting is on.** Without one, tapping share does nothing (the SDK sheet does not open either) and only a warning is logged. On Android, the next time the user leaves the app afterwards, system PIP is skipped once.
+- `url` is `null` when there is no link; Android also sends an `error` event (`NOT_INITIALIZED_SHARE_URL`) in that case. iOS gives `null` for a value it cannot parse as a URL.
+- Android: the fullscreen player runs in its own task. A share screen opened from the Flutter host Activity may, when closed, bring your app screen to the front instead of the broadcast. Switch to in-app PIP (`enterPictureInPicture()`) before opening it.
+- iOS: the player is presented over the Flutter screen. Present your share sheet from the top-most view controller.
+- A change while playing applies from the next `start`, `play` or `reload`.
+
+### In-app PIP buttons
+
+`pip.closeButton` and `pip.restoreButton` take `ShopliveButtonOptions` (SDK 3.0.4+, Android and iOS; not applied to the system PIP window).
+
+```dart
+await player.setConfiguration(const ShoplivePlayerConfiguration(
+  pip: ShoplivePipOptions(
+    closeButton: ShopliveButtonOptions(nativeImageName: 'pip_close'),   // Android res/drawable/pip_close.xml, iOS Assets.xcassets "pip_close"
+    restoreButton: ShopliveButtonOptions(isHidden: true),
+  ),
+));
+```
+
+- `isHidden: true` hides the button; it wins over the image. A hidden restore button means tapping the PIP window restores it. If you hide the close button and also set `isDragOutToCloseEnabled: false`, the viewer has no way to close the PIP window.
+- `nativeImageName` is the name of an image **in your app's native resources**: an Android drawable resource name (`res/drawable/<name>`) or an iOS Asset Catalog image name. It is **not** a Flutter asset path. The button frame is 28 dp/pt; use a vector (Android vector drawable, iOS PDF/SVG) or an image of that size. Android drawables must not use theme attributes (`?attr/...`).
+- A name that cannot be resolved, or `''`, does not fail `start` / `setConfiguration`: a warning is logged and the button looks as in 3.0.3 (the server asset if any, otherwise the SDK default close button and no restore button).
+- Android release builds with resource shrinking may remove drawables that only Dart refers to by name. Keep them in `res/raw/keep.xml`:
+
+  ```xml
+  <resources xmlns:tools="http://schemas.android.com/tools"
+      tools:keep="@drawable/pip_close,@drawable/pip_restore" />
+  ```
+
+- `nativeImageName` is write-only: `getConfiguration()` returns only `isHidden` (`nativeImageName` is always `null`). Because omitted fields keep their values, passing the result of `getConfiguration()` back keeps the images.
+- An image cannot be removed by passing `null` (omitted keeps the current value). Pass `''` to go back to no image (a warning is logged).
 
 ### Coupon and custom-action requests
 
@@ -162,7 +235,7 @@ The Dart API and channel contract are the same on both platforms. The iOS SDK di
 | Topic | iOS behavior |
 |---|---|
 | `start` | The plugin creates the SDK player view controller and presents it over the top-most screen. Calling `start` while a session is open (fullscreen or in-app PIP) closes it and presents a new player, as on Android |
-| `configuration.type` | `preview` / `live` select the SDK `.preview` / `.default` configuration preset and set the SDK `type` (3.0.3), then the other fields are applied |
+| `configuration.type` | `preview` / `live` select the SDK `.preview` / `.default` configuration preset and set the SDK `type` (3.0.3), then the other fields are applied. Changing `type` resets the fields you do not pass in the same call to the preset, including `navigation.isCustomShareEnabled` and the PIP buttons (Android keeps them) |
 | Ignored on iOS | `configuration.android.*`, `pip.aspectRatio`, `setUser(profile.custom)` - accepted and ignored (no iOS SDK counterpart). `initialize(appVersion:)` is ignored on both platforms since SDK 3.0.3 |
 | Not exposed yet | iOS-only SDK options: `sound.autoResumeOnCallEnded`, `pip.fixedWidth` / `floatingOffset` / `windowProvider`, `appearance.allowScreenCapture`, loading images, chat fonts, `attribution.advertisingId` - the SDK defaults apply |
 | Events | `playback` `failed`: `code` / `message` are `null`. `error`: `rawCode` is the SDK raw code (always set since SDK 3.0.3, same as Android). Streamer `stateChanged.isRehearsal` is `null` (the iOS SDK has no rehearsal flag) |
@@ -197,7 +270,7 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 | `ShopLiveCommon.clearAuth` | `Shoplive.logout()` |
 | `ShopLivePlayer.play(ShopLivePlayerData)` | `ShoplivePlayer.instance.start(campaignKey, playOptions: …, configuration: …)`. Use `play` to switch campaigns while running |
 | `showPreview(ShopLivePlayerPreviewData)` (≤1.7) / `showPreview(campaignKey)` + `setPreviewOption(...)` (1.8.x) | `start(campaignKey, playOptions: ShoplivePlayOptions(presentationStyle: ShoplivePresentationStyle.pip), configuration: ShoplivePlayerConfiguration(type: ShoplivePlayerType.preview, pip: ShoplivePipOptions(isInAppPipEnabled: true)))`. Preview UI details depend on SDK 3.x; check them on a device |
-| Share handling (the 1.x Android bridge overrode `handleShare` and ran the SDK default share after 100 ms) | No share handler in SDK 3.x. Set `configuration.navigation.shareScheme` |
+| Share handling (the 1.x Android bridge overrode `handleShare` and ran the SDK default share after 100 ms) | `configuration.navigation.shareScheme` for the link; since 3.0.4, `navigation.isCustomShareEnabled` + `ShoplivePlayerShareRequested` to show your own share screen |
 | `setShareScheme` | `configuration.navigation.shareScheme` |
 | `setNextActionOnHandleNavigation` | `configuration.navigation.actionOnNavigation` |
 | `setEnterPipModeOnBackPressed` | `configuration.android.enterOSPipOnBackPressed` |
@@ -209,9 +282,9 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 | `useCloseButton`, `setEndpoint`, tablet aspect ratio, transparent status bar | No equivalent in SDK 3.x |
 | 1.8.x `setPreviewOption` margins / `position` | `configuration.pip.padding` (`ShopliveInsets`) / `configuration.pip.defaultPosition` (`ShoplivePipPosition`) |
 | 1.8.x `setPreviewOption` `pipRadius`, `enableSwipeOut`, `pipMaxSize` | `enableSwipeOut`: closest is `configuration.pip.isDragOutToCloseEnabled` (SDK 3.0.3, check on a device). `pipRadius`, `pipMaxSize`: no equivalent (closest: `pip.scale`, `pip.aspectRatio`) |
-| 1.8.x `closeButtonConfig` (`ShopLiveCloseButtonConfig`) | No equivalent in SDK 3.x |
+| 1.8.x `closeButtonConfig` (`ShopLiveCloseButtonConfig`) | Since 3.0.4: `configuration.pip.closeButton` (`ShopliveButtonOptions`: hide it or use an app image) for the in-app PIP window |
 | 1.8.x `hidePreview()` | No separate API. `close()` ends the session (whether it matches 1.8.x hide-only behavior is unverified) |
-| 1.8.x `previewClose` stream and its `reason` (`close_button`, `swipe_out`, `broadcast_ended`, `programmatic`) | No equivalent event. `stateChanged(closed)` tells that it closed, `campaignStatusChanged(ended)` that the broadcast ended; the close reason is not available |
+| 1.8.x `previewClose` stream and its `reason` (`close_button`, `swipe_out`, `broadcast_ended`, `programmatic`) | No equivalent event. `stateChanged(closed)` tells that it closed, `campaignStatusChanged(ended)` that the broadcast ended; since 3.0.4 `closeReason` tells why (`userAction`, `appRequest`, `accessKeyChanged`) |
 | 1.8.x `setResizeMode(auto / centerCrop / fit)` | `setResizeMode(ShopliveResizeMode.fill / fit)`. `auto` and `centerCrop` do not exist in SDK 3.x; `centerCrop` users should try `fill` (closest, check on a device) |
 | 1.8.x `sendDownloadCouponResult` / `sendCustomActionResult` | `couponRequests` / `customWebActionRequests` and `request.respond(...)` |
 | 1.8.x `getSdkVersion()` | `Shoplive.getSdkVersion()` |
@@ -225,8 +298,12 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 
 ## Known limitations
 
+- **iOS: `reload()` may close the player (under investigation).** SDK `reload` stops and plays again; the stop reports `closed`, on which the iOS plugin releases the player. If that happens, you get `closed` with `appRequest`; call `start` again. Android keeps the session (`closed` → `loading` → `playing`).
+- **Custom share needs a listener.** With `isCustomShareEnabled: true` and no listener on `events`, tapping share does nothing (only a warning is logged); on Android the next exit from the app skips system PIP once.
+- **Android: share screen and the fullscreen task.** A share screen opened from the Flutter host Activity may bring your app to the front instead of the broadcast when it closes. Switch to in-app PIP before opening it.
+- **iOS: changing `configuration.type` resets new fields.** `isCustomShareEnabled` and the PIP buttons return to the preset unless you pass them in the same call (Android keeps them).
 - **iOS: deferred presentation reports success early.** If `start` is called while another screen transition is running, the player is presented when that transition ends; `start` has already returned success, so a later presentation failure is not reported (only logged).
-- **Nullable settings cannot be reset from Dart.** `navigation.shareScheme` and `android.isVolumeKeyEnabled` cannot be set back to `null`: an omitted field keeps its current value.
+- **Nullable settings cannot be reset from Dart.** `navigation.shareScheme` and `android.isVolumeKeyEnabled` cannot be set back to `null`: an omitted field keeps its current value. For PIP button images, pass `nativeImageName: ''` (logs a warning) to go back to no image.
 - **Sessions do not survive an engine restart.** After the Flutter engine is detached and attached again (add-to-app, multiple engines), the new plugin instance cannot control or observe a session that the previous engine left open (for example with `closeWhenAppDestroyed: false`). Requests from that session are answered with the fallback result.
 - **Only synchronous listener errors are handled.** If a request listener throws synchronously, that request is answered with the fallback result immediately. Errors thrown after an `await` in an async listener are not caught. If you never respond, the request falls back when the timeout expires.
 - **Silent SDK rejections cannot be detected.** If the launch Activity is gone or is not a `LifecycleOwner`, the SDK rejects `start` with a log message only. `start` still completes successfully.

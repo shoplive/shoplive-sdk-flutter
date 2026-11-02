@@ -1,6 +1,6 @@
 # Shoplive SDK for Flutter
 
-Flutter plugins and sample app for Shoplive SDK **3.0.3** (Android and iOS).
+Flutter plugins and sample app for Shoplive SDK **3.0.4** (Android and iOS).
 
 - Integration guide: https://developer.shoplive.cloud/mobile
 - To use Shoplive, contact ask@shoplive.cloud.
@@ -31,14 +31,14 @@ Add only the package you need. An app that only plays videos adds `shoplive_play
 
 ```yaml
 dependencies:
-  shoplive_player: 3.0.3     # player, includes shoplive_core
-  # shoplive_streamer: 3.0.3 # broadcast, includes shoplive_core
+  shoplive_player: 3.0.4     # player, includes shoplive_core
+  # shoplive_streamer: 3.0.4 # broadcast, includes shoplive_core
 ```
 
 Then do the platform setup:
 
 - **Android:** The plugins add the Shoplive Maven repository (`https://sdk.shoplive.cloud/maven-repo`) for you. If your project declares the repository itself, follow "Android: Maven repository setup" in the package README.
-- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.3 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
+- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.4 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
 
 ## Quick start
 
@@ -54,6 +54,15 @@ await player.start('CAMPAIGN_KEY');
 ```
 
 For configuration, events, coupon and custom-action requests, PIP, error codes and known limitations, see the [`shoplive_player` README](shoplive_flutter_sample/README.md).
+
+## Upgrading from 3.0.3
+
+Change the three package versions to 3.0.4 together. Most 3.0.3 code compiles unchanged. Two cases need an edit:
+
+- A `switch` over `ShoplivePlayerEvent` without a `default` case must handle the new `ShoplivePlayerShareRequested`.
+- Classes that `implements` a plugin class (test doubles) must implement the new members.
+
+New in 3.0.4: custom share handling (`navigation.isCustomShareEnabled`), in-app PIP button options (`pip.closeButton` / `restoreButton`) and the close reason (`ShoplivePlayerStateChanged.closeReason`). Native SDK 3.0.4 behavior changes (for example, a new access key closes players started with the old key) are listed in each package's CHANGELOG.
 
 ## Migrating from 1.x
 

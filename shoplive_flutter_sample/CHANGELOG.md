@@ -1,3 +1,31 @@
+## 3.0.4
+
+Built on Shoplive SDK 3.0.4 (Android `cloud.shoplive:shoplive-player-sdk:3.0.4`, iOS `ShoplivePlayerSDK` 3.0.4). Depends on `shoplive_core` 3.0.4.
+
+### Breaking
+* `ShoplivePlayerEvent` has a new subtype, `ShoplivePlayerShareRequested`. A `switch` over `ShoplivePlayerEvent` without a `default` (or `_`) case must add it; code with a `default` case or `is` checks compiles unchanged. The native SDKs 3.0.4 made the same change.
+* Code that `implements` a public plugin class (for example a test double) must implement the new members: `ShoplivePlayerStateChanged.closeReason`, `ShoplivePipOptions.closeButton` / `restoreButton` and `ShopliveNavigationOptions.isCustomShareEnabled`.
+
+### Added
+* Custom share: `ShopliveNavigationOptions.isCustomShareEnabled`. When `true`, tapping share in the player does not open the SDK share sheet; instead `events` delivers one `ShoplivePlayerShareRequested` per SDK share request, with `ShopliveShareInfo` (`url`, `campaignKey`, `title`, `descriptionText`, `thumbnailUrl`, all nullable). `false` or omitted keeps the SDK share sheet. Android and iOS.
+* In-app PIP buttons: `ShoplivePipOptions.closeButton` and `restoreButton` take `ShopliveButtonOptions(isHidden:, nativeImageName:)`. `isHidden` hides the button (it wins over the image). `nativeImageName` is the name of an image in your app: an Android drawable resource name or an iOS Asset Catalog image name (not a Flutter asset path). A name that cannot be resolved does not fail the call; a warning is logged and the button looks as in 3.0.3. `getConfiguration()` returns only `isHidden`. See README.
+* Close reason: `ShoplivePlayerStateChanged.closeReason` (`ShopliveCloseReason.userAction`, `appRequest`, `accessKeyChanged`; unknown values map to `unknown`) is set when `state` is `closed`, and is `null` for other states. `ShoplivePlayerState` is unchanged. `getState()` still returns `closed` without a reason. The `closed` the plugin sends itself when a replacing `start` fails has the reason `appRequest`.
+
+### Changed
+* Calling `Shoplive.initialize` with a different access key closes viewer players started with the previous key: you get `stateChanged(closed)` with `closeReason: accessKeyChanged`. Start the player again if needed. Android: `ShopliveUser.token` users must call `Shoplive.setUser` again.
+* Android: a new `start` (and a PIP `play`) also closes other Shoplive player sessions in the app, for example a native `ShoplivePlayer` or a player of another Flutter engine. Those sessions get `closed` with `appRequest`. The previous session of this plugin is still closed without a `closed` event, as before.
+* A configuration set while a session is running now applies from the next `start`, `play` or `reload` (Android SDK 3.0.4 accepts it at any time; `navigation.shareScheme` applies from the next share tap). Before, Android ignored it until the next `start`.
+* Android: sharing uses `navigation.shareScheme` before the web page's share URL (surrounding spaces are removed), the same as iOS.
+* Android: web commands without data (for example `LOGIN_REQUIRED`, `CLICK_BACK_BUTTON`) arrive as `webCommandReceived` with an empty `payload` (`{}`), the same as iOS. `reload()` keeps the last play options.
+* Android: the SDK 3.0.4 libraries are obfuscated and `shoplive-core` / `shoplive-player-sdk` must use the same version (the Flutter packages pin it). Check a release build of your app once after upgrading.
+* iOS: downloads `ShoplivePlayerSDK` 3.0.4 and verifies the new sha256.
+
+### Known limitations
+* iOS: `reload()` may close the player (under investigation). SDK `reload` stops and plays again, and the stop reports `closed`, on which the iOS plugin releases the player. If it happens, you get `closed` with `appRequest`; call `start` again.
+* With `isCustomShareEnabled: true`, keep a listener on `ShoplivePlayer.instance.events`. Without one, tapping share does nothing (the SDK sheet does not open either) and only a warning is logged; on Android the next time the user leaves the app, system PIP is skipped once.
+* Android: the fullscreen player runs in its own task. If you open your share screen from the Flutter host Activity, closing it may bring your app screen to the front instead of the broadcast. Switching to in-app PIP (`enterPictureInPicture()`) before opening the share screen is recommended.
+* iOS: changing `configuration.type` rebuilds the configuration from the `.preview` / `.default` preset, so `isCustomShareEnabled` and the PIP button settings return to their defaults unless you pass them in the same call (Android keeps them).
+
 ## 3.0.3
 
 Built on Shoplive SDK 3.0.3 (Android `cloud.shoplive:shoplive-player-sdk:3.0.3`, iOS `ShoplivePlayerSDK` 3.0.3). Depends on `shoplive_core` 3.0.3. No Dart breaking change.
