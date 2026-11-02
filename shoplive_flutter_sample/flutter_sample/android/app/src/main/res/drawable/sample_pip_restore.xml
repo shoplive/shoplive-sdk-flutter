@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SMV-1899 sample: in-App PIP restore (back to fullscreen) button image
+     (ShopliveButtonOptions.nativeImageName = 'sample_pip_restore'). 28dp; colors are literal values (no ?attr). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+    <path
+        android:fillColor="#CC1E88E5"
+        android:pathData="M14,0a14,14 0,1 1,0 28a14,14 0,1 1,0 -28z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M9,15V19H13M19,13V9H15M9,19L13,15M19,9L15,13" />
+</vector>
