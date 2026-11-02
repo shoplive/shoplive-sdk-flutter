@@ -138,10 +138,11 @@ class ShopliveButtonOptions {
 
   /// 버튼 이미지로 쓸 **앱 네이티브 이미지 이름** — Android는 앱의 drawable 리소스 이름(`res/drawable/<name>`),
   /// iOS는 앱 번들 Asset Catalog의 이미지 이름이다. **Flutter 에셋 경로(`assets/...`)가 아니다.**
-  /// - null(생략)이면 현재 이미지를 유지한다. 이미지가 없는 버튼은 서버 에셋 → SDK 기본으로 그린다. 두 버튼 모두 이미지가
-  ///   없으면 3.0.3과 같은 외형이고, 다른 버튼의 이미지가 해석되면 SDK가 두 버튼 모두 새 외형으로 그린다.
+  /// - null(생략)이면 현재 이미지를 유지한다. 이미지가 없는 버튼은 서버 에셋으로 그리고, 서버 에셋도 없으면 닫기는 SDK 기본
+  ///   이미지, 복귀는 버튼을 그리지 않는다. 두 버튼 모두 이미지가 없으면 3.0.3과 같은 외형이다. Android는 다른 버튼의
+  ///   이미지가 해석되면 SDK가 두 버튼 모두 새 외형으로 그린다(iOS는 외형 전환 없음).
   /// - 이름을 찾지 못하거나 ''이면 실패하지 않고 경고 로그를 남긴 뒤 이미지 없음으로 그린다(이전에 지정한 이미지도 지워짐).
-  /// - 버튼 틀은 28dp/pt — 벡터(Android vector drawable·iOS PDF/SVG) 또는 그 크기에 맞는 이미지를 권장한다.
+  /// - 버튼 틀은 Android 28dp · iOS 24pt — 벡터(Android vector drawable·iOS PDF/SVG) 또는 그 크기에 맞는 이미지를 권장한다.
   ///   Android drawable은 테마 속성(`?attr/...`)을 쓰지 않는다.
   /// - Android release 빌드의 리소스 축소(shrinkResources)는 Dart에서만 이름으로 쓰는 drawable을 지울 수 있다 —
   ///   `res/raw/keep.xml`에 `tools:keep="@drawable/<name>"`으로 남긴다.
