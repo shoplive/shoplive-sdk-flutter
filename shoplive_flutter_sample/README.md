@@ -202,7 +202,7 @@ await player.setConfiguration(const ShoplivePlayerConfiguration(
 
 - `isHidden: true` hides the button; it wins over the image. A hidden restore button means tapping the PIP window restores it. If you hide the close button and also set `isDragOutToCloseEnabled: false`, the viewer has no way to close the PIP window.
 - `nativeImageName` is the name of an image **in your app's native resources**: an Android drawable resource name (`res/drawable/<name>`) or an iOS Asset Catalog image name. It is **not** a Flutter asset path. The button frame is 28 dp/pt; use a vector (Android vector drawable, iOS PDF/SVG) or an image of that size. Android drawables must not use theme attributes (`?attr/...`).
-- A name that cannot be resolved, or `''`, does not fail `start` / `setConfiguration`: a warning is logged and the button looks as in 3.0.3 (the server asset if any, otherwise the SDK default close button and no restore button).
+- A name that cannot be resolved, or `''`, does not fail `start` / `setConfiguration`: a warning is logged and that button is drawn as if no image was set (the SDK falls back to the server PIP asset, then its default). If neither button has an image, the PIP looks as in 3.0.3 (no restore button unless the server asset exists); if the other button's image resolves, the SDK switches to the new layout for both.
 - Android release builds with resource shrinking may remove drawables that only Dart refers to by name. Keep them in `res/raw/keep.xml`:
 
   ```xml
