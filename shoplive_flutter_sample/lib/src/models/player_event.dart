@@ -20,6 +20,28 @@ class ShopliveCampaignInfo {
   }
 }
 
+/// 공유 요청 정보([ShoplivePlayerShareRequested], SDK 3.0.4+ — SMV-1899). 필드 이름은 네이티브 `ShopliveShareInfo`와 같다.
+/// 모든 필드는 nullable: 원천이 없으면 null이다(SDK가 지어 채우지 않음). iOS는 URL로 해석하지 못한 [url]·[thumbnailUrl]도 null로 준다(플랫폼 차이).
+class ShopliveShareInfo {
+  const ShopliveShareInfo({this.url, this.campaignKey, this.title, this.descriptionText, this.thumbnailUrl});
+
+  /// 공유 링크: `navigation.shareScheme` → 없으면 웹이 보낸 공유 URL. 둘 다 없으면 null.
+  final String? url;
+  final String? campaignKey;
+  final String? title;
+  final String? descriptionText;
+  final String? thumbnailUrl;
+
+  /// 필드 형식 오류는 그 필드만 null(이벤트는 유지).
+  static ShopliveShareInfo _fromWire(Map<String, Object?> m) => ShopliveShareInfo(
+        url: asType<String>(m['url']),
+        campaignKey: asType<String>(m['campaignKey']),
+        title: asType<String>(m['title']),
+        descriptionText: asType<String>(m['descriptionText']),
+        thumbnailUrl: asType<String>(m['thumbnailUrl']),
+      );
+}
+
 class ShopliveCampaign {
   const ShopliveCampaign({required this.status, this.title});
 
@@ -114,6 +136,8 @@ sealed class ShoplivePlayerEvent {
       case 'userNameUpdateRequested':
         final payload = asStringMap(m['payload']);
         return payload == null ? null : ShopliveUserNameUpdateRequested(payload);
+      case 'shareRequested':
+        return ShoplivePlayerShareRequested(ShopliveShareInfo._fromWire(m));
       case 'unknown':
         return ShoplivePlayerUnknownEvent(rawType: asType<String>(m['rawType']) ?? '');
       default:
@@ -187,6 +211,23 @@ class ShopliveWebCommandReceived extends ShoplivePlayerEvent {
 class ShopliveUserNameUpdateRequested extends ShoplivePlayerEvent {
   const ShopliveUserNameUpdateRequested(this.payload);
   final Map<String, Object?> payload;
+}
+
+// TODO(SDP-VERIFY): 요확인 — 아래 문서 주석 'url null' 줄: iOS에서 url이 nil일 때 error 이벤트가 함께 오는지(Android는 NOT_INITIALIZED_SHARE_URL 1건) · 근거 SMV-1899
+// TODO(SDP-VERIFY): 요확인 — 아래 문서 주석 'Android 공유 화면 띄우기' 줄: 공유 전 in-App PIP 전환 패턴이 공유 화면 종료 뒤 방송 복귀를 보장하는지 실측 · 근거 SMV-1899
+// TODO(SDP-VERIFY): 요확인 — 아래 문서 주석 'iOS 시트 위치' 줄: share_plus 등 앱 공유 시트가 .overFullScreen 플레이어 위에 표시되는지 실측 · 근거 SMV-1899
+/// 시청자가 공유 버튼을 눌렀다(SDK 3.0.4+, SMV-1899) — 앱이 [info]로 공유 화면을 띄운다.
+///
+/// `navigation.isCustomShareEnabled: true`로 시작한 세션에서만 오고, 이때 SDK 기본 공유 시트는 뜨지 않는다.
+/// false·생략이면 이 이벤트 없이 기본 시트가 뜬다. SDK가 알린 1건을 1건으로 전달한다(브릿지는 합치거나 늘리지 않음).
+/// - **events를 구독하지 않으면 공유는 아무 반응이 없다**(기본 시트도 뜨지 않음 — 경고 로그만). 켤 때는 반드시 구독한다.
+/// - url null: 링크가 없으면 url이 null로 온다 — 링크 없이 처리하거나 무시한다. Android는 error 이벤트(NOT_INITIALIZED_SHARE_URL)도 함께 온다.
+/// - Android 공유 화면 띄우기: 풀스크린 플레이어는 별도 태스크라, 앱 화면에서 띄운 공유 화면을 닫으면 방송 대신 앱 화면이 앞에 올 수 있다.
+///   공유 전에 `enterPictureInPicture()`로 in-App PIP로 바꾼 뒤 띄우는 방식을 권장한다.
+/// - iOS 시트 위치: 플레이어는 Flutter 화면 위에 표시되므로 공유 시트는 최상위 화면 기준으로 띄운다.
+class ShoplivePlayerShareRequested extends ShoplivePlayerEvent {
+  const ShoplivePlayerShareRequested(this.info);
+  final ShopliveShareInfo info;
 }
 
 /// 매핑 불가·미지·형식 오류 이벤트(N-03). [rawType]은 디버그 표시용.

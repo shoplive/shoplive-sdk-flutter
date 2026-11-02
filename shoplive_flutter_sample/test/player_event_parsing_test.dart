@@ -75,4 +75,17 @@ void main() {
     const legacy = ShoplivePlayerStateChanged(ShoplivePlayerState.closed);
     expect(legacy.closeReason, isNull);
   });
+
+  // case: A1-3 (R-D3, SMV-1899) — shareRequested 전 필드 / 전부 null / 비문자열 필드는 그 필드만 null
+  test('shareRequested parses ShopliveShareInfo', () {
+    ShopliveShareInfo info(Map<String, Object?> m) => (p({'type': 'shareRequested', ...m}) as ShoplivePlayerShareRequested).info;
+    final full = info({'url': 'https://s/1', 'campaignKey': 'k', 'title': 't', 'descriptionText': 'd', 'thumbnailUrl': 'https://s/p.png'});
+    expect([full.url, full.campaignKey, full.title, full.descriptionText, full.thumbnailUrl], ['https://s/1', 'k', 't', 'd', 'https://s/p.png']);
+    final empty = info({'url': null, 'campaignKey': null, 'title': null, 'descriptionText': null, 'thumbnailUrl': null});
+    expect([empty.url, empty.campaignKey, empty.title, empty.descriptionText, empty.thumbnailUrl], everyElement(isNull));
+    final missing = info({});
+    expect([missing.url, missing.campaignKey, missing.title, missing.descriptionText, missing.thumbnailUrl], everyElement(isNull));
+    final bad = info({'url': 1, 'campaignKey': 'k', 'title': true});
+    expect([bad.url, bad.campaignKey, bad.title], [null, 'k', null]);
+  });
 }

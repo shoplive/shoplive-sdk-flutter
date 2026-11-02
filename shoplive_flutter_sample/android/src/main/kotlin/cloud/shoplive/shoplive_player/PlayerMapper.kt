@@ -22,6 +22,7 @@ import cloud.shoplive.player.ShoplivePlayerType
 import cloud.shoplive.player.ShopliveResizeMode
 import cloud.shoplive.player.ShopliveResultAlertType
 import cloud.shoplive.player.ShopliveResultStatus
+import cloud.shoplive.player.ShopliveShareInfo
 
 /** 채널 `shoplive_player` 계약 이름(design.md rev2 §2.1·§2.4·§2.5). */
 internal object PlayerContract {
@@ -176,6 +177,8 @@ internal object PlayerMapper {
                     actionOnNavigation = nonNullEnum(navigation, "actionOnNavigation", NAVIGATION_ACTION) ?: cn.actionOnNavigation,
                     shareScheme = if (navigation?.has("shareScheme") == true) navigation.optString("shareScheme") else cn.shareScheme,
                     closeWhenAppDestroyed = nonNullBool(android, "closeWhenAppDestroyed") ?: cn.closeWhenAppDestroyed,
+                    // SDK 3.0.4(기본 false). 생략 = 현재 값 유지, 키+null·비Boolean = INVALID_ARGUMENT(iOS와 같은 키·규칙 — SMV-1899 A2-4)
+                    isCustomShareEnabled = nonNullBool(navigation, "isCustomShareEnabled") ?: cn.isCustomShareEnabled,
                 ),
                 overlay = current.overlay.copy(ui = nonNullEnum(overlay, "ui", OVERLAY_UI) ?: current.overlay.ui),
                 customParameters = partial.optStringStringMap("customParameters") ?: requireNotExplicitNull(partial, "customParameters", current.customParameters),
@@ -248,7 +251,11 @@ internal object PlayerMapper {
         ),
         "sound" to mapOf("muteOnStart" to c.sound.muteOnStart, "mixWithOthers" to c.sound.mixWithOthers),
         "appearance" to mapOf("indicatorColor" to (c.appearance.indicatorColor.toLong() and ARGB_MASK)),
-        "navigation" to mapOf("actionOnNavigation" to wireOf(c.navigation.actionOnNavigation, NAVIGATION_ACTION), "shareScheme" to c.navigation.shareScheme),
+        "navigation" to mapOf(
+            "actionOnNavigation" to wireOf(c.navigation.actionOnNavigation, NAVIGATION_ACTION),
+            "shareScheme" to c.navigation.shareScheme,
+            "isCustomShareEnabled" to c.navigation.isCustomShareEnabled,
+        ),
         "overlay" to mapOf("ui" to wireOf(c.overlay.ui, OVERLAY_UI)),
         "customParameters" to c.customParameters,
         "android" to mapOf(
@@ -297,10 +304,17 @@ internal object PlayerMapper {
         // SDK 3.0.4: payload 없는 커맨드(LOGIN_REQUIRED 등)는 null로 온다 → iOS(PlayerMapper.swift nil → {})와 같은 {}로(SMV-1899 D4)
         is ShoplivePlayerEvent.WebCommandReceived ->
             mapOf(TYPE to "webCommandReceived", "name" to event.name, "payload" to ValueNormalizer.normalize(event.payload ?: emptyMap<String, Any?>()))
+        // TODO(SDP-VERIFY): 요확인 — Android SDK가 1탭을 2건으로 내는 경로(웹 두 입구가 100ms 넘게 떨어짐) 실측. 브릿지는 1건=1건 중계(디바운스 없음) · 근거 SMV-1899
+        is ShoplivePlayerEvent.ShareRequested -> mapOf(TYPE to "shareRequested") + shareInfoToWire(event.info)
         is ShoplivePlayerEvent.UserNameUpdateRequested ->
             mapOf(TYPE to "userNameUpdateRequested", "payload" to ValueNormalizer.normalize(event.payload))
         else -> unknownToWire(event)
     }
+
+    /** 다섯 키를 항상 싣고 없는 값은 null(campaignInfoReceived와 같은 관례, iOS와 같은 wire — SMV-1899 A1-3). */
+    private fun shareInfoToWire(i: ShopliveShareInfo): Map<String, Any?> = mapOf(
+        "url" to i.url, "campaignKey" to i.campaignKey, "title" to i.title, "descriptionText" to i.descriptionText, "thumbnailUrl" to i.thumbnailUrl,
+    )
 
     private fun playbackToWire(e: ShoplivePlaybackEvent): Map<String, Any?> {
         val kind = when (e) {

@@ -173,16 +173,22 @@ class ShopliveAppearanceOptions {
 }
 
 class ShopliveNavigationOptions {
-  const ShopliveNavigationOptions({this.actionOnNavigation, this.shareScheme});
+  const ShopliveNavigationOptions({this.actionOnNavigation, this.shareScheme, this.isCustomShareEnabled});
 
   final ShopliveNavigationAction? actionOnNavigation;
   final String? shareScheme;
+
+  /// 공유를 앱이 처리할지(SDK 3.0.4+, Android·iOS — SMV-1899). true면 공유 탭 때 SDK 기본 시트 대신
+  /// [ShoplivePlayerShareRequested] 이벤트가 온다(events를 반드시 구독). null이면 현재 값 유지(SDK 기본값 false).
+  /// 재생 중 바꾸면 다음 start·play·reload부터 적용된다.
+  final bool? isCustomShareEnabled;
 
   @internal
   Map<String, Object?> toWire() {
     final m = <String, Object?>{};
     wire.putIfNotNull(m, 'actionOnNavigation', actionOnNavigation == null ? null : wire.toWire(actionOnNavigation!));
     wire.putIfNotNull(m, 'shareScheme', shareScheme);
+    wire.putIfNotNull(m, 'isCustomShareEnabled', isCustomShareEnabled);
     return m;
   }
 
@@ -191,6 +197,7 @@ class ShopliveNavigationOptions {
       : ShopliveNavigationOptions(
           actionOnNavigation: _enum(ShopliveNavigationAction.values, m['actionOnNavigation'], ShopliveNavigationAction.unknown),
           shareScheme: wire.asType<String>(m['shareScheme']),
+          isCustomShareEnabled: wire.asType<bool>(m['isCustomShareEnabled']),
         );
 }
 

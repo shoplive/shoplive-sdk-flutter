@@ -93,6 +93,8 @@ enum PlayerMapper {
         if let navigation = try partial.optArgs("navigation") {
             if let v = try nonNullEnum(navigation, "actionOnNavigation", navigationAction) { config.navigation.actionOnNavigation = v }
             if navigation.has("shareScheme") { config.navigation.shareScheme = try navigation.optString("shareScheme") }
+            // SDK 3.0.4 (default false). Missing = keep, key+null or non-Bool = INVALID_ARGUMENT (Android parity, SMV-1899 A2-4).
+            if let v = try nonNullBool(navigation, "isCustomShareEnabled") { config.navigation.isCustomShareEnabled = v }
         }
         if let overlay = try partial.optArgs("overlay") {
             if let v = try nonNullEnum(overlay, "ui", overlayUI) { config.overlay.ui = v }
@@ -140,7 +142,8 @@ enum PlayerMapper {
             "sound": ["muteOnStart": c.sound.muteOnStart, "mixWithOthers": c.sound.mixWithOthers],
             "appearance": ["indicatorColor": argb(c.appearance.indicatorColor)],
             "navigation": ["actionOnNavigation": wireOf(c.navigation.actionOnNavigation, navigationAction),
-                           "shareScheme": c.navigation.shareScheme as Any? ?? NSNull()] as [String: Any],
+                           "shareScheme": c.navigation.shareScheme as Any? ?? NSNull(),
+                           "isCustomShareEnabled": c.navigation.isCustomShareEnabled] as [String: Any],
             "overlay": ["ui": wireOf(c.overlay.ui, overlayUI)],
             "customParameters": c.customParameters,
         ]
@@ -193,9 +196,22 @@ enum PlayerMapper {
         case .webCommand(let name, let payload):
             // Contract payload is a non-null map: nil -> {} (I-E-03).
             return ["type": "webCommandReceived", "name": name, "payload": ValueNormalizer.normalize(payload ?? [:])]
+        // TODO(SDP-VERIFY): 요확인 — iOS SDK의 공유 연타 접힘 규칙(1탭=1건) 실측(swiftinterface로 확인 불가). 브릿지는 1건=1건 중계(디바운스 없음) · 근거 SMV-1899
+        case .shareRequested(let info):
+            return shareInfoToWire(info)
         @unknown default:
             return ["type": wireUnknown, "rawType": "unknown"]
         }
+    }
+
+    /// All five keys always present, missing values NSNull (Android parity, SMV-1899 A1-3). URL? -> absoluteString.
+    private static func shareInfoToWire(_ i: ShopliveShareInfo) -> [String: Any] {
+        ["type": "shareRequested",
+         "url": i.url?.absoluteString as Any? ?? NSNull(),
+         "campaignKey": i.campaignKey as Any? ?? NSNull(),
+         "title": i.title as Any? ?? NSNull(),
+         "descriptionText": i.descriptionText as Any? ?? NSNull(),
+         "thumbnailUrl": i.thumbnailUrl?.absoluteString as Any? ?? NSNull()]
     }
 
     private static func playbackToWire(_ p: PlaybackEvent) -> [String: Any] {

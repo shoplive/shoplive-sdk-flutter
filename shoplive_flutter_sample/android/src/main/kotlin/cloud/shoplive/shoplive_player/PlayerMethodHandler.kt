@@ -196,7 +196,7 @@ internal class PlayerMethodHandler<H : Any>(
     private fun retire(p: PlayerPort) {
         release(p)
         registry.flushAll()
-        // TODO(SDP-VERIFY): 요확인 — 이전 전체화면 Activity finish(비동기)와 새 start의 Activity 실행이 겹칠 때 화면 전환(특히 같은 campaignKey) 실측 · 근거 SMV-1749
+        // TODO(SDP-VERIFY): 요확인 — 이전 전체화면 Activity finish(비동기)와 새 start의 Activity 실행이 겹칠 때 화면 전환(특히 같은 campaignKey) 실측. 같은 campaignKey면 종료 중 풀스크린이 재사용돼 처음 인스턴스 설정(isCustomShareEnabled 등)을 따르는지도 확인(SDK KDoc) · 근거 SMV-1749, SMV-1899 A2-5
         if (p.isRunning) p.close() // SDK isRunning = sessionToken != null(3.0.4 ShoplivePlayer.kt:439). 그 밖의 close는 SDK에서 no-op
     }
 

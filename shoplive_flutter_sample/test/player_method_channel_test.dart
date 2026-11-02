@@ -187,4 +187,28 @@ void main() {
         };
     expect((await player.getConfiguration()).pip!.isDragOutToCloseEnabled, isNull);
   });
+
+  // case: A2-4 (R-D5, SMV-1899) navigation.isCustomShareEnabled — 생략 시 키 없음, 지정 시 그대로, 읽기 형식 오류는 null
+  test('navigation.isCustomShareEnabled toWire / fromWire', () async {
+    await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(shareScheme: 's')));
+    await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: true)));
+    expect(calls[0].arguments, {
+      'configuration': {
+        'navigation': {'shareScheme': 's'},
+      },
+    });
+    expect(calls[1].arguments, {
+      'configuration': {
+        'navigation': {'isCustomShareEnabled': true},
+      },
+    });
+    responder = (_) => {
+          'navigation': {'actionOnNavigation': 'pip', 'shareScheme': null, 'isCustomShareEnabled': true},
+        };
+    expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue);
+    responder = (_) => {
+          'navigation': {'isCustomShareEnabled': 'yes'},
+        };
+    expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isNull);
+  });
 }

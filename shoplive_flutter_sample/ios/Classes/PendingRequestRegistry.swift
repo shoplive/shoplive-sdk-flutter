@@ -73,6 +73,11 @@ final class PlayerDelegateBridge: ShoplivePlayerDelegate {
         onMain { [weak self] in
             guard let self = self, self.isCurrent else { return }
             if case .stateChanged(.closed) = event { self.handler?.playerDidClose(player) }
+            // D3(a'): isCustomShareEnabled=true but Dart does not listen -> the SDK shows no sheet either, so log the cause.
+            // The event is still emitted (EventEmitter drops it); judged at delivery, so a listener added after start works (SMV-1899 A2-1).
+            if case .shareRequested = event, self.events?.hasListener != true {
+                bridgeLog("ShoplivePlayerDelegate", "shareRequested dropped: navigation.isCustomShareEnabled is true but no Dart listener on ShoplivePlayer.events")
+            }
             self.events?.emit(PlayerMapper.eventToWire(event))
         }
     }

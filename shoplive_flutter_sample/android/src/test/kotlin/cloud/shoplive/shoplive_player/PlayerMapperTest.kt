@@ -21,6 +21,7 @@ import cloud.shoplive.player.ShoplivePlayerEvent
 import cloud.shoplive.player.ShoplivePlayerPresentationStyle
 import cloud.shoplive.player.ShoplivePlayerState
 import cloud.shoplive.player.ShoplivePlayerType
+import cloud.shoplive.player.ShopliveShareInfo
 import cloud.shoplive.player.ShopliveResizeMode
 import cloud.shoplive.player.ShopliveResultAlertType
 import cloud.shoplive.player.ShopliveResultStatus
@@ -214,6 +215,25 @@ class PlayerMapperTest {
         }
     }
 
+    @Test // case: A2-4 (R-A5, SMV-1899) navigation.isCustomShareEnabled 생략 유지/true/false/키+null·비Boolean INVALID, toWire 포함
+    fun merge_navigationCustomShare() {
+        val base = ShoplivePlayerConfiguration()
+        assertEquals(false, base.navigation.isCustomShareEnabled) // SDK 기본값 false — 생략 시 이 값 유지
+        val on = PlayerMapper.mergeConfiguration(base, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to true))))
+        assertEquals(true, on.navigation.isCustomShareEnabled)
+        val kept = PlayerMapper.mergeConfiguration(on, Args.of(mapOf("navigation" to mapOf("shareScheme" to "s"))))
+        assertEquals(true, kept.navigation.isCustomShareEnabled)
+        val off = PlayerMapper.mergeConfiguration(on, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to false))))
+        assertEquals(false, off.navigation.isCustomShareEnabled)
+        for (bad in listOf(null, "true", 1)) {
+            val e = assertThrows(BridgeArgumentException::class.java) {
+                PlayerMapper.mergeConfiguration(on, Args.of(mapOf("navigation" to mapOf("isCustomShareEnabled" to bad))))
+            }
+            assertEquals("isCustomShareEnabled", e.key)
+        }
+        assertEquals(true, (PlayerMapper.configurationToWire(on)["navigation"] as Map<*, *>)["isCustomShareEnabled"])
+    }
+
     @Test // case: SMV-1749 PIP isDragOutToCloseEnabled 생략/true/false/null/비Boolean
     fun merge_pipDragOutToClose() {
         val base = ShoplivePlayerConfiguration()
@@ -349,6 +369,21 @@ class PlayerMapperTest {
         assertEquals(
             mapOf("type" to "userNameUpdateRequested", "payload" to mapOf("j" to mapOf("x" to 2L))),
             PlayerMapper.eventToWire(ShoplivePlayerEvent.UserNameUpdateRequested(mapOf("j" to JSONObject().put("x", 2)))),
+        )
+    }
+
+    @Test // case: A1-3 (R-A3, SMV-1899) shareRequested — 다섯 필드 그대로, 없는 값은 null(키는 항상 실음 — campaignInfoReceived와 같은 관례)
+    fun shareRequested_fullAndEmpty() {
+        assertEquals(
+            mapOf(
+                "type" to "shareRequested", "url" to "https://s/1", "campaignKey" to "k", "title" to "t",
+                "descriptionText" to "d", "thumbnailUrl" to "https://s/p.png",
+            ),
+            PlayerMapper.eventToWire(ShoplivePlayerEvent.ShareRequested(ShopliveShareInfo("https://s/1", "k", "t", "d", "https://s/p.png"))),
+        )
+        assertEquals(
+            mapOf("type" to "shareRequested", "url" to null, "campaignKey" to null, "title" to null, "descriptionText" to null, "thumbnailUrl" to null),
+            PlayerMapper.eventToWire(ShoplivePlayerEvent.ShareRequested(ShopliveShareInfo())),
         )
     }
 

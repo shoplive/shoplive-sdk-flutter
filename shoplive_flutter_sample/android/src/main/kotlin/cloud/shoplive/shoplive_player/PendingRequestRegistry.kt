@@ -121,7 +121,14 @@ internal class PlayerDelegateBridge(
 
     override fun onEvent(sender: ShoplivePlayerControlling, event: ShoplivePlayerEvent) = onMain {
         if (!attach.isCurrent(generation)) return@onMain
-        Bridge.guardCallback(TAG, "onEvent") { events.emit(PlayerMapper.eventToWire(event)) }
+        // D3(a'): isCustomShareEnabled=true인데 Dart가 events를 듣지 않으면 SDK 기본 시트도 뜨지 않아 공유가 무반응 → 원인을 경고로 남긴다.
+        // 이벤트는 그대로 emit(폐기는 EventEmitter). 판정은 전달 시점이라 start 뒤에 생긴 구독도 정상 전달(SMV-1899 A2-1).
+        Bridge.guardCallback(TAG, "onEvent") {
+            if (event is ShoplivePlayerEvent.ShareRequested && !events.hasListener()) {
+                Log.w(TAG, "shareRequested dropped: navigation.isCustomShareEnabled is true but no Dart listener on ShoplivePlayer.events")
+            }
+            events.emit(PlayerMapper.eventToWire(event))
+        }
     }
 
     override fun onRequest(sender: ShoplivePlayerControlling, request: ShoplivePlayerRequest) = onMain {

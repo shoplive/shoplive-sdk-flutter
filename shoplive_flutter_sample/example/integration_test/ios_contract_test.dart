@@ -84,6 +84,28 @@ void main() {
       expect((await player.getConfiguration()).type, ShoplivePlayerType.live);
     });
 
+    // case: A2-4 (R-I1, SMV-1899) — isCustomShareEnabled round-trip, omitted keeps the value, key+null / non-Bool INVALID_ARGUMENT
+    testWidgets('navigation.isCustomShareEnabled round-trips and validates', (_) async {
+      await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: true)));
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue);
+      await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(shareScheme: 'app://s')));
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue);
+      const channel = MethodChannel('shoplive_player');
+      for (final bad in <Object?>[null, 'yes']) {
+        await expectLater(
+          channel.invokeMethod<void>('setConfiguration', {
+            'configuration': {
+              'navigation': {'isCustomShareEnabled': bad},
+            },
+          }),
+          _platformError('INVALID_ARGUMENT'),
+        );
+      }
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue); // rejected calls change nothing
+      await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: false)));
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isFalse);
+    });
+
     // case: B-09, B-08, N-06
     testWidgets('validation errors', (_) async {
       await player.setConfiguration(const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isInAppPipEnabled: false)));
