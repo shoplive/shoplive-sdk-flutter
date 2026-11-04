@@ -101,7 +101,7 @@ class ShoplivePlayer {
   Future<ShoplivePlayerConfiguration> getConfiguration() async =>
       ShoplivePlayerConfiguration.fromWire(await _invokeRequired<Object>(_C.getConfiguration));
 
-  /// 쿠폰·커스텀 요청 응답 대기 시간(기본 10초). 이후 들어오는 요청부터 적용. 0 이하는 INVALID_ARGUMENT.
+  /// 쿠폰·커스텀 요청 응답 대기 시간(기본 10초). 이후 들어오는 요청부터 적용. 1초~120초 밖이면 INVALID_ARGUMENT.
   Future<void> setRequestTimeout(Duration timeout) => _invokeVoid(_C.setRequestTimeout, {'timeoutMs': timeout.inMilliseconds});
 
   // ---- 이벤트 ----
