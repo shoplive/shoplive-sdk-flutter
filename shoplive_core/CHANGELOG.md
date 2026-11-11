@@ -1,7 +1,3 @@
-## 3.0.4
-
-Built on Shoplive SDK 3.0.4 (Android `cloud.shoplive:shoplive-core:3.0.4`, iOS `ShopliveCore` 3.0.4). No Dart API change.
-
 ### Changed
 * Calling `Shoplive.initialize` with a different access key now closes viewer players started with the previous key. `shoplive_player` reports it as `stateChanged(closed)` with `closeReason: accessKeyChanged`. Android: if you log users in with `ShopliveUser.token`, call `Shoplive.setUser` again after the new `initialize`.
 * Android: `shoplive-core`, `shoplive-player-sdk` and `shoplive-streamer-sdk` 3.0.4 are obfuscated and must use the same version (a mismatch fails at runtime with `NoSuchMethodError`). The three Flutter packages already pin the same version; check a release build of your app once after upgrading.

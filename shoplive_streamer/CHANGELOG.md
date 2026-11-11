@@ -1,7 +1,3 @@
-## 3.0.4
-
-Built on Shoplive SDK 3.0.4 (Android `cloud.shoplive:shoplive-streamer-sdk:3.0.4`, iOS `ShopliveStreamerSDK` 3.0.4). Depends on `shoplive_core` 3.0.4. No Dart API change.
-
 ### Changed
 * Android: starting a broadcast without an access key (before `Shoplive.initialize`, or with a blank key) now reports the error code `NOT_INITIALIZED_ACCESS_KEY` instead of `UNEXPECTED_ERROR`. Keep treating `code` as an opaque string.
 * Android: the SDK 3.0.4 libraries are obfuscated and `shoplive-core` / `shoplive-streamer-sdk` must use the same version (the Flutter packages pin it). Check a release build of your app once after upgrading.

@@ -1,7 +1,3 @@
-## 3.0.4
-
-Built on Shoplive SDK 3.0.4 (Android `cloud.shoplive:shoplive-player-sdk:3.0.4`, iOS `ShoplivePlayerSDK` 3.0.4). Depends on `shoplive_core` 3.0.4.
-
 ### Breaking
 * `ShoplivePlayerEvent` has a new subtype, `ShoplivePlayerShareRequested`. A `switch` over `ShoplivePlayerEvent` without a `default` (or `_`) case must add it; code with a `default` case or `is` checks compiles unchanged. The native SDKs 3.0.4 made the same change.
 * Code that `implements` a public plugin class (for example a test double) must implement the new members: `ShoplivePlayerStateChanged.closeReason`, `ShoplivePipOptions.closeButton` / `restoreButton` and `ShopliveNavigationOptions.isCustomShareEnabled`.
