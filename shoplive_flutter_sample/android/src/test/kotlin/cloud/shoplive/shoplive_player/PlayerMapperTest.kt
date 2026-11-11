@@ -56,6 +56,25 @@ class PlayerMapperTest {
         check(PlayerMapper.ALERT_TYPE, ShopliveResultAlertType.values())
     }
 
+    @Test // case: R-1 (R6-A1, SMV-1899 D9) — 3.0.6 DEFAULT ↔ wire 'default'(Dart ShopliveResizeMode.auto)
+    fun resizeMode_default_roundTripsAsDefaultWire() {
+        assertEquals("default", wireOf(ShopliveResizeMode.DEFAULT, PlayerMapper.RESIZE_MODE))
+        assertEquals(ShopliveResizeMode.DEFAULT, Args.of(mapOf("mode" to "default")).requireWireEnum("mode", PlayerMapper.RESIZE_MODE))
+        assertThrows(BridgeArgumentException::class.java) { Args.of(mapOf("mode" to "auto")).requireWireEnum("mode", PlayerMapper.RESIZE_MODE) }
+    }
+
+    @Test // case: C-2 (R6-A7, SMV-1899 D12) — 실행 중 인스턴스 병합은 type을 넣지 않는다(프리뷰 프리셋의 type·mute·overlay 유지)
+    fun merge_withoutType_keepsInstanceType() {
+        val preview = ShoplivePlayerConfiguration.PREVIEW
+        val partial = Args.of(mapOf("type" to "live", "navigation" to mapOf("isCustomShareEnabled" to true)))
+        val instance = PlayerMapper.mergeConfiguration(preview, partial, { null }, applyType = false)
+        assertEquals(ShoplivePlayerType.PREVIEW, instance.type)
+        assertEquals(true, instance.sound.muteOnStart)
+        assertEquals(ShopliveOverlayUIMode.HIDDEN, instance.overlay.ui)
+        assertEquals(true, instance.navigation.isCustomShareEnabled)
+        assertEquals(ShoplivePlayerType.LIVE, merge(preview, partial).type) // 기본(applyType=true)은 type도 병합
+    }
+
     @Test // case: A0-1 (R-A1) — 3.0.4 sealed 상태 6종이 전부 Dart enum name으로(unknown 없음). Closed는 사유와 무관하게 'closed'
     fun stateToWire_allSixStates_notUnknown() {
         assertEquals("idle", PlayerMapper.stateToWire(ShoplivePlayerState.Idle))
@@ -181,7 +200,7 @@ class PlayerMapperTest {
         assertEquals(0.5f, merged.pip.scale, 0f)
         assertEquals(ShoplivePipRatio.RATIO_1X1, merged.pip.aspectRatio)
         assertEquals(3, merged.pip.padding.right)
-        assertEquals(true, merged.pip.enterOSPipOnBackPressed)
+        assertEquals(true, merged.pip.backPressEntersPip) // case: B-2 (R6-A3) — wire 키는 3.0.3 이름 그대로(SMV-1899 D8 W1)
         assertEquals(false, merged.sound.isVolumeKeyEnabled)
         assertEquals(false, merged.sound.autoResumeOnFocusGained)
         assertEquals(0xFF00FF00.toInt(), merged.appearance.indicatorColor)

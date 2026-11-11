@@ -88,4 +88,14 @@ void main() {
     final bad = info({'url': 1, 'campaignKey': 'k', 'title': true});
     expect([bad.url, bad.campaignKey, bad.title], [null, 'k', null]);
   });
+
+  // case: E-1 (R6-D10, SMV-1899) — Android 3.0.6 PIP 권한 꺼짐(9511)은 코드 문자열 그대로 error 이벤트로 온다(브릿지 패스스루)
+  test('PIP_DISABLED_BY_USER error event keeps code and rawCode', () {
+    final err = (p({
+      'type': 'error',
+      'error': {'code': 'PIP_DISABLED_BY_USER', 'message': 'm', 'rawCode': 9511, 'recoverable': false},
+    }) as ShoplivePlayerErrorEvent)
+        .error;
+    expect([err.code, err.rawCode, err.recoverable], ['PIP_DISABLED_BY_USER', 9511, false]);
+  });
 }

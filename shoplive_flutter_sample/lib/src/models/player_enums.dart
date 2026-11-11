@@ -16,7 +16,12 @@ enum ShopliveCampaignStatus { ready, live, ended, unknown }
 
 enum ShopliveConnectionState { connecting, connected, reconnecting, disconnected, unknown }
 
-enum ShopliveResizeMode { fill, fit, unknown }
+/// 영상 화면 맞춤.
+/// - [auto]: Android SDK 3.0.6+ `DEFAULT` — 창 크기로 고른다(폰 [fill], 태블릿·펼친 폴더블 [fit], 접고 펼 때 다시 고름).
+///   새 플레이어의 Android 기본값이다. iOS에는 이 판정이 없어 [fill]로 적용하고 `getResizeMode()`는 [fill]을 돌려준다.
+///   1.8.x 플러그인의 `auto`(서버 화면비)와 다른 뜻이다.
+/// - [fill]·[fit]: 창 크기와 무관하게 그 방식으로 그린다.
+enum ShopliveResizeMode { fill, fit, auto, unknown }
 
 enum ShopliveOverlayUIMode { builtIn, hidden, unknown }
 

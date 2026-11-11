@@ -99,7 +99,8 @@ internal object PlayerMapper {
         "connecting" to ShopliveConnectionState.CONNECTING, "connected" to ShopliveConnectionState.CONNECTED,
         "reconnecting" to ShopliveConnectionState.RECONNECTING, "disconnected" to ShopliveConnectionState.DISCONNECTED,
     )
-    val RESIZE_MODE = mapOf("fill" to ShopliveResizeMode.FILL, "fit" to ShopliveResizeMode.FIT)
+    /** "default" = SDK 3.0.6 DEFAULT(창 크기로 FILL/FIT), Dart 이름은 `auto`(`default`는 Dart 예약어 — SMV-1899 D9). */
+    val RESIZE_MODE = mapOf("default" to ShopliveResizeMode.DEFAULT, "fill" to ShopliveResizeMode.FILL, "fit" to ShopliveResizeMode.FIT)
     val OVERLAY_UI = mapOf("builtIn" to ShopliveOverlayUIMode.BUILT_IN, "hidden" to ShopliveOverlayUIMode.HIDDEN)
     val PRESENTATION_STYLE = mapOf("fullscreen" to ShoplivePlayerPresentationStyle.FULLSCREEN, "pip" to ShoplivePlayerPresentationStyle.PIP)
     val PLAYER_TYPE = mapOf("live" to ShoplivePlayerType.LIVE, "preview" to ShoplivePlayerType.PREVIEW)
@@ -138,8 +139,16 @@ internal object PlayerMapper {
      * non-null 필드에 키+null → INVALID_ARGUMENT. nullable 필드(shareScheme·isVolumeKeyEnabled)는 키+null = 명시적 null.
      * customParameters는 맵 단위 교체. loadingAnimation·chatInputTypeface는 노출하지 않으므로 항상 현재 값 유지.
      * [drawableId]: 앱 drawable 리소스 이름 → 리소스 ID(없으면 null). Mapper가 Context를 갖지 않도록 인자로 받는다(JVM 테스트 대역 — SMV-1899 D1).
+     * [applyType]: false면 `type`을 읽지 않는다 — 실행 중 인스턴스에 병합할 때(SMV-1899 D12 X2: 떠 있는 미리보기의 프리셋을 지킨다).
+     * [warnUnresolvedImage]: 한 setConfiguration이 두 대상에 병합할 때 이미지 해석 실패 경고를 1줄로 두려고 두 번째 병합에서 끈다(D12 X10).
      */
-    fun mergeConfiguration(current: ShoplivePlayerConfiguration, partial: Args, drawableId: (String) -> Int?): ShoplivePlayerConfiguration =
+    fun mergeConfiguration(
+        current: ShoplivePlayerConfiguration,
+        partial: Args,
+        drawableId: (String) -> Int?,
+        applyType: Boolean = true,
+        warnUnresolvedImage: Boolean = true,
+    ): ShoplivePlayerConfiguration =
         Bridge.constructing(K.CONFIGURATION) {
             val android = partial.optArgs("android")
             val pip = partial.optArgs("pip")
@@ -152,7 +161,7 @@ internal object PlayerMapper {
             val ca = current.appearance
             val cn = current.navigation
             current.copy(
-                type = nonNullEnum(partial, "type", PLAYER_TYPE) ?: current.type,
+                type = (if (applyType) nonNullEnum(partial, "type", PLAYER_TYPE) else null) ?: current.type,
                 pip = cp.copy(
                     isInAppPipEnabled = nonNullBool(pip, "isInAppPipEnabled") ?: cp.isInAppPipEnabled,
                     isOSPipEnabled = nonNullBool(pip, "isOSPipEnabled") ?: cp.isOSPipEnabled,
@@ -164,8 +173,8 @@ internal object PlayerMapper {
                     // SDK 3.0.3 신규(기본 true). 생략 = 현재 값 유지, 키+null·비Boolean = INVALID_ARGUMENT(다른 Boolean 필드와 같은 규칙)
                     isDragOutToCloseEnabled = nonNullBool(pip, "isDragOutToCloseEnabled") ?: cp.isDragOutToCloseEnabled,
                     // SDK 3.0.4 in-App PIP 버튼(SMV-1899 A3). isHidden·이미지 우선순위는 SDK가 정한다 — 브릿지는 값만 넘긴다.
-                    closeButton = mergeButton(cp.closeButton, pip, "closeButton", drawableId),
-                    restoreButton = mergeButton(cp.restoreButton, pip, "restoreButton", drawableId),
+                    closeButton = mergeButton(cp.closeButton, pip, "closeButton", drawableId, warnUnresolvedImage),
+                    restoreButton = mergeButton(cp.restoreButton, pip, "restoreButton", drawableId, warnUnresolvedImage),
                 ),
                 sound = cs.copy(
                     muteOnStart = nonNullBool(sound, "muteOnStart") ?: cs.muteOnStart,
@@ -199,9 +208,10 @@ internal object PlayerMapper {
         pip: Args?,
         key: String,
         drawableId: (String) -> Int?,
+        warn: Boolean,
     ): ShoplivePlayerConfiguration.ButtonOptions {
         val a = pip?.optArgs(key) ?: return requireNotExplicitNull(pip, key, cur)
-        val imageResId = if (a.has(NATIVE_IMAGE_NAME)) a.optString(NATIVE_IMAGE_NAME)?.let { resolveImage(key, it, drawableId) } else cur.imageResId
+        val imageResId = if (a.has(NATIVE_IMAGE_NAME)) a.optString(NATIVE_IMAGE_NAME)?.let { resolveImage(key, it, drawableId, warn) } else cur.imageResId
         return cur.copy(isHidden = nonNullBool(a, "isHidden") ?: cur.isHidden, imageResId = imageResId)
     }
 
@@ -209,9 +219,9 @@ internal object PlayerMapper {
      * 해석 실패('' · 없는 이름 · 0)는 실패로 던지지 않는다(§1(3)): 경고 1줄 후 이미지 없음 → SDK가 서버 에셋 → 기본으로 그린다.
      * 0 대신 null을 넘긴다(SDK도 0을 미지정으로 보지만 계약상 "없음"은 null).
      */
-    private fun resolveImage(key: String, name: String, drawableId: (String) -> Int?): Int? {
+    private fun resolveImage(key: String, name: String, drawableId: (String) -> Int?, warn: Boolean): Int? {
         val id = name.takeIf { it.isNotEmpty() }?.let(drawableId)?.takeIf { it != 0 }
-        if (id == null) {
+        if (id == null && warn) {
             Log.w(TAG, "configuration.pip.$key.$NATIVE_IMAGE_NAME '$name' is not a drawable resource of the app; using the server asset or the SDK default")
         }
         return id

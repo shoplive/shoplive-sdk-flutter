@@ -267,16 +267,25 @@ class ShopliveOverlayOptions {
 
 /// Android 전용 옵션(configuration.android, CS-03). iOS에서는 무시된다.
 class ShopliveAndroidPlayerOptions {
+  /// [enterOSPipOnBackPressed]는 [backPressEntersPip]의 옛 이름이다. 둘 다 주면 [backPressEntersPip]가 이긴다.
   const ShopliveAndroidPlayerOptions({
-    this.enterOSPipOnBackPressed,
+    bool? backPressEntersPip,
+    @Deprecated('Use backPressEntersPip (renamed with Android SDK 3.0.6)') bool? enterOSPipOnBackPressed,
     this.isVolumeKeyEnabled,
     this.autoResumeOnFocusGained,
     this.isStatusBarVisible,
     this.allowScreenCapture,
     this.closeWhenAppDestroyed,
-  });
+  }) : backPressEntersPip = backPressEntersPip ?? enterOSPipOnBackPressed;
 
-  final bool? enterOSPipOnBackPressed;
+  /// 시스템 뒤로가기로 PIP에 들어갈지(Android SDK 3.0.6 `PipOptions.backPressEntersPip`). 판정은 SDK가 한다 — 이 값과
+  /// `pip.isInAppPipEnabled`가 모두 true일 때만 뒤로가기가 PIP로 내려가고, 아니면 세션을 닫는다(기본 false). null이면 현재 값 유지.
+  final bool? backPressEntersPip;
+
+  /// [backPressEntersPip]의 옛 이름(3.0.3). 같은 값을 읽는다.
+  @Deprecated('Use backPressEntersPip (renamed with Android SDK 3.0.6)')
+  bool? get enterOSPipOnBackPressed => backPressEntersPip;
+
   final bool? isVolumeKeyEnabled;
   final bool? autoResumeOnFocusGained;
   final bool? isStatusBarVisible;
@@ -286,7 +295,8 @@ class ShopliveAndroidPlayerOptions {
   @internal
   Map<String, Object?> toWire() {
     final m = <String, Object?>{};
-    wire.putIfNotNull(m, 'enterOSPipOnBackPressed', enterOSPipOnBackPressed);
+    // wire 키는 3.0.3 이름 그대로 — Dart와 네이티브는 한 패키지로 함께 배포돼 키를 바꿀 이득이 없다(SMV-1899 D8 W1).
+    wire.putIfNotNull(m, 'enterOSPipOnBackPressed', backPressEntersPip);
     wire.putIfNotNull(m, 'isVolumeKeyEnabled', isVolumeKeyEnabled);
     wire.putIfNotNull(m, 'autoResumeOnFocusGained', autoResumeOnFocusGained);
     wire.putIfNotNull(m, 'isStatusBarVisible', isStatusBarVisible);
@@ -298,7 +308,7 @@ class ShopliveAndroidPlayerOptions {
   static ShopliveAndroidPlayerOptions? _fromWire(Map<String, Object?>? m) => m == null
       ? null
       : ShopliveAndroidPlayerOptions(
-          enterOSPipOnBackPressed: wire.asType<bool>(m['enterOSPipOnBackPressed']),
+          backPressEntersPip: wire.asType<bool>(m['enterOSPipOnBackPressed']),
           isVolumeKeyEnabled: wire.asType<bool>(m['isVolumeKeyEnabled']),
           autoResumeOnFocusGained: wire.asType<bool>(m['autoResumeOnFocusGained']),
           isStatusBarVisible: wire.asType<bool>(m['isStatusBarVisible']),

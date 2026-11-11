@@ -69,7 +69,10 @@ final class PlayerMethodHandler {
             c.isMuted = muted
         case "isMuted": return controller?.isMuted ?? false
         case "setResizeMode":
-            let mode = try args.requireWireEnum("mode", PlayerMapper.resizeMode)
+            let mode = try args.requireWireEnum("mode", PlayerMapper.resizeModeInput)
+            if try args.optString("mode") == "default" {
+                bridgeLog(Self.tag, "resizeMode auto is an Android-only judgement; iOS applies fill")
+            }
             controller?.resizeMode = mode
             savedResizeMode = mode
         case "getResizeMode":
@@ -87,11 +90,18 @@ final class PlayerMethodHandler {
         case "getCurrentCampaign": return PlayerMapper.campaignToWire(controller?.currentCampaign)
         case "isRunning": return isRunning
         case "setConfiguration":
-            let (merged, type) = try PlayerMapper.mergeConfiguration(currentConfiguration(), currentType: savedType,
-                                                                      partial: try args.requireArgs("configuration"))
-            // A running controller takes the value from its next start/play/reload (SDK 3.0.4 rule; Android 3.0.4
-            // ShoplivePlayerControlling KDoc "same as iOS 3.0.4" - SMV-1899 A0-4; timing is a manual verification item).
-            controller?.configuration = merged
+            let partial = try args.requireArgs("configuration")
+            let (merged, type) = try PlayerMapper.mergeConfiguration(currentConfiguration(), currentType: savedType, partial: partial)
+            // SMV-1899 D12: the controller gets the partial on top of its own configuration, not the saved one. Since SDK 3.0.5 the
+            // configuration owns resizeMode / overlayUI and applies them at once (ShoplivePlayerView.swift:15-30, :491-493,
+            // :971-973), so assigning the saved merge reset setResizeMode / setOverlayUI on a running player, and a preview
+            // preset would be replaced. `type` is left out: it applies from the next start (start always presents a new
+            // controller, so the current controller's type never reaches a later start).
+            let instance = try controller.map {
+                try PlayerMapper.mergeConfiguration($0.configuration, currentType: savedType, partial: partial,
+                                                    applyType: false, warnUnresolvedImage: false).0
+            }
+            if let c = controller, let instance = instance { c.configuration = instance }
             savedConfiguration = merged
             savedType = type
         case "getConfiguration":
@@ -276,9 +286,10 @@ final class PlayerMethodHandler {
         savedOverlayUI = nil
     }
 
-    /// Merge base: saved -> held controller -> SDK default instance.
+    /// Merge base = what the next start uses: saved -> SDK default. Never the controller's own configuration - a preview preset or
+    /// SDK-changed values would otherwise become the saved settings of the next start (SMV-1899 D12).
     private func currentConfiguration() -> ShoplivePlayerConfiguration {
-        savedConfiguration ?? controller?.configuration ?? ShoplivePlayerConfiguration()
+        savedConfiguration ?? ShoplivePlayerConfiguration()
     }
 
     // MARK: respond (C-4)

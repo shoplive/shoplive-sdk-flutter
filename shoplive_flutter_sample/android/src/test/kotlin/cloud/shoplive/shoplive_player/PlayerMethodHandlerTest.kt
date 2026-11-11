@@ -35,7 +35,7 @@ internal class FakePort(var running: Boolean = false) : PlayerPort {
         set(value) { calls += "setConfiguration"; field = value }
     override var isMuted: Boolean = false
         set(value) { calls += "setMuted"; field = value }
-    override var resizeMode: ShopliveResizeMode = ShopliveResizeMode.FILL
+    override var resizeMode: ShopliveResizeMode = ShopliveResizeMode.DEFAULT // 3.0.6 ShoplivePlayer 생성자 초기값(ShoplivePlayer.kt:1731)
         set(value) { calls += "setResizeMode"; field = value }
     override var overlayUI: ShopliveOverlayUIMode = ShopliveOverlayUIMode.BUILT_IN
         set(value) { calls += "setOverlayUI"; field = value }
@@ -103,7 +103,7 @@ class PlayerMethodHandlerTest {
         assertEquals(false, call("isMuted"))
         assertEquals(false, call("isInPictureInPicture"))
         assertNull(call("getCurrentCampaign"))
-        assertEquals("fill", call("getResizeMode"))
+        assertEquals("default", call("getResizeMode")) // case: R-1 (R6-A2) — 3.0.6 생성자 초기값 DEFAULT
         assertEquals("builtIn", call("getOverlayUI"))
         assertEquals(PlayerMapper.configurationToWire(ShoplivePlayerConfiguration()), call("getConfiguration"))
         assertNull(call("close"))
@@ -408,6 +408,62 @@ class PlayerMethodHandlerTest {
         assertEquals("live", (call("getConfiguration") as Map<*, *>)["type"])
     }
 
+    // ---- D12(SMV-1899): 재생 중 setConfiguration — 인스턴스는 인스턴스 설정 위에, 보관값은 보관값 위에 ----
+
+    @Test // case: C-1·C-2·C-3 (R6-A7) — 실행 중 인스턴스(프리셋이 보관값과 다름)에는 type 없이 병합, 보관값은 SDK 기본 위에
+    fun setConfiguration_runningInstance_mergesOntoInstanceWithoutType_savedOntoSaved() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        port().configuration = ShoplivePlayerConfiguration.PREVIEW // 보관값과 다른 인스턴스 설정(프리뷰 채택·SDK 확장 변경 등)
+        call("setConfiguration", mapOf("configuration" to mapOf("type" to "live", "navigation" to mapOf("isCustomShareEnabled" to true))))
+        val instance = port().configuration
+        assertEquals(ShoplivePlayerType.PREVIEW, instance.type)
+        assertEquals(true, instance.sound.muteOnStart)
+        assertEquals(ShopliveOverlayUIMode.HIDDEN, instance.overlay.ui)
+        assertEquals(true, instance.navigation.isCustomShareEnabled)
+        val saved = call("getConfiguration") as Map<*, *>
+        assertEquals("live", saved["type"])
+        assertEquals(false, (saved["sound"] as Map<*, *>)["muteOnStart"])
+        assertEquals(true, (saved["navigation"] as Map<*, *>)["isCustomShareEnabled"])
+    }
+
+    @Test // case: C-3 (R6-A7) — 보관값이 없으면 getConfiguration은 SDK 기본(인스턴스 설정으로 떨어지지 않는다)
+    fun getConfiguration_withoutSaved_isSdkDefault_notInstance() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        port().configuration = ShoplivePlayerConfiguration.PREVIEW
+        assertEquals(PlayerMapper.configurationToWire(ShoplivePlayerConfiguration()), call("getConfiguration"))
+    }
+
+    @Test // case: C-5 (R6-A7, X9·Y2) — 비실행 Idle 인스턴스에는 type까지 병합 → 재사용되는 다음 start가 그 type으로 시작
+    fun setConfiguration_idleInstance_includesType_nextStartUsesIt() {
+        handler.attachHost("A1")
+        nextFailure = IllegalStateException("start failed")
+        assertThrows(IllegalStateException::class.java) { call("start", mapOf("campaignKey" to "k")) }
+        val idle = port()
+        idle.startFailure = null
+        call("setConfiguration", mapOf("configuration" to mapOf("type" to "preview")))
+        assertEquals(ShoplivePlayerType.PREVIEW, idle.configuration.type)
+        call("start", mapOf("campaignKey" to "k"))
+        assertEquals(1, created.size) // Idle·같은 호스트라 재사용(portForStart)
+        assertEquals(ShoplivePlayerType.PREVIEW, idle.configuration.type)
+        assertEquals("preview", (call("getConfiguration") as Map<*, *>)["type"])
+    }
+
+    @Test // case: C-2 (R6-A7) — 인자 오류면 인스턴스·보관값 어느 것도 바뀌지 않는다(두 병합 계산 뒤 대입)
+    fun setConfiguration_invalid_changesNeitherInstanceNorSaved() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        port().configuration = ShoplivePlayerConfiguration.PREVIEW
+        port().calls.clear()
+        assertThrows(BridgeArgumentException::class.java) {
+            call("setConfiguration", mapOf("configuration" to mapOf("navigation" to mapOf("isCustomShareEnabled" to true), "sound" to mapOf("muteOnStart" to "yes"))))
+        }
+        assertEquals(ShoplivePlayerConfiguration.PREVIEW, port().configuration)
+        assertEquals(emptyList<String>(), port().calls)
+        assertEquals(PlayerMapper.configurationToWire(ShoplivePlayerConfiguration()), call("getConfiguration"))
+    }
+
     @Test // case: SMV-1749, A4-6 (R-A7) — close 후 같은 호스트에서 다시 start해도 Closed 인스턴스를 재사용하지 않는다(재사용 조건은 Idle뿐)
     fun closedInstance_sameHost_startCreatesNewPort() {
         handler.attachHost("A1")
@@ -441,7 +497,7 @@ class PlayerMethodHandlerTest {
         assertEquals(true, running.running)
         handler.attachHost("A1")
         call("start", mapOf("campaignKey" to "k"))
-        assertEquals(ShopliveResizeMode.FILL, port().resizeMode)
+        assertEquals(ShopliveResizeMode.DEFAULT, port().resizeMode)
     }
 
     // ---- respond (C-4) ----

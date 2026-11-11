@@ -262,7 +262,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
           pip: ShoplivePipOptions(isInAppPipEnabled: true, isOSPipEnabled: _osPipEnabled),
           sound: const ShopliveSoundOptions(muteOnStart: false, mixWithOthers: true),
           navigation: ShopliveNavigationOptions(shareScheme: shareScheme.isEmpty ? null : shareScheme),
-          android: const ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: true),
+          android: const ShopliveAndroidPlayerOptions(backPressEntersPip: true),
         ),
       ),
     );

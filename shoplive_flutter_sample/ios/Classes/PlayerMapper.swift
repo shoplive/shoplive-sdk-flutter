@@ -13,7 +13,12 @@ enum PlayerMapper {
     static let connectionState: [String: ShopliveConnectionState] = [
         "connecting": .connecting, "connected": .connected, "reconnecting": .reconnecting, "disconnected": .disconnected,
     ]
+    /// Output (getResizeMode): one wire name per value - wireOf scans an unordered Dictionary (BridgeCore.swift:320-322), so a
+    /// second key for .fill would make the reply nondeterministic.
     static let resizeMode: [String: ShopliveResizeMode] = ["fill": .fill, "fit": .fit]
+    /// Input (setResizeMode). "default" is Dart ShopliveResizeMode.auto = Android SDK 3.0.6 DEFAULT (window-size judgement); the
+    /// iOS SDK has no such mode, so it is applied as .fill, the iOS default (SMV-1899 D9).
+    static let resizeModeInput: [String: ShopliveResizeMode] = ["fill": .fill, "fit": .fit, "default": .fill]
     static let overlayUI: [String: ShopliveOverlayUIMode] = ["builtIn": .builtIn, "hidden": .hidden]
     static let presentationStyle: [String: ShoplivePlayerPresentationStyle] = ["fullscreen": .fullScreen, "pip": .pip]
     static let pipPosition: [String: ShoplivePipPosition] = [
@@ -44,11 +49,14 @@ enum PlayerMapper {
 
     /// Merges a partial configuration over `current` (CFG-01). D-2/IM-m1: a `type` different from the current one selects
     /// the `.preview`/`.default` preset as the new base; the same type keeps the current fields (Android parity).
-    static func mergeConfiguration(_ current: ShoplivePlayerConfiguration, currentType: String,
-                                   partial: Args) throws -> (ShoplivePlayerConfiguration, String) {
+    /// `applyType: false` skips `type` - used for the running controller (SMV-1899 D12 X2: a type change there would rebase on a
+    /// preset and the 3.0.5 configuration didSet would unmute / show the overlay of a floating preview at once).
+    /// `warnUnresolvedImage: false` keeps the unresolved-image warning to one line when one call merges into two targets (D12 X10).
+    static func mergeConfiguration(_ current: ShoplivePlayerConfiguration, currentType: String, partial: Args,
+                                   applyType: Bool = true, warnUnresolvedImage: Bool = true) throws -> (ShoplivePlayerConfiguration, String) {
         var config = current
         var type = currentType
-        if let newType = try nonNullEnum(partial, "type", playerType), newType != currentType {
+        if applyType, let newType = try nonNullEnum(partial, "type", playerType), newType != currentType {
             // TODO(SDP-VERIFY): 요확인 - .preview/.default 프리셋의 실제 값(swiftinterface에 내용 없음) · 근거 DRAFT-flutter-sdk-302-ios/D-2 · 자동 통과 금지(실측)
             config = newType == "preview" ? .preview : .default
             // SDK 3.0.3 adds ShoplivePlayerConfiguration.type; set it explicitly whatever the preset holds (SMV-1749).
@@ -64,8 +72,8 @@ enum PlayerMapper {
             // SDK default is true (measured on iOS 18.4 simulator, SMV-1749).
             if let v = try nonNullBool(pip, "isDragOutToCloseEnabled") { config.pip.isDragOutToCloseEnabled = v }
             // SDK 3.0.4 in-App PIP buttons (SMV-1899 A3). isHidden vs image precedence is the SDK's - the bridge passes both.
-            config.pip.closeButton = try mergeButton(pip, "closeButton", config.pip.closeButton)
-            config.pip.restoreButton = try mergeButton(pip, "restoreButton", config.pip.restoreButton)
+            config.pip.closeButton = try mergeButton(pip, "closeButton", config.pip.closeButton, warn: warnUnresolvedImage)
+            config.pip.restoreButton = try mergeButton(pip, "restoreButton", config.pip.restoreButton, warn: warnUnresolvedImage)
             if try nonNullEnum(pip, "aspectRatio", pipRatio) != nil {
                 bridgeLog("ShoplivePlayer", "configuration.pip.aspectRatio is not supported by the iOS SDK and is ignored")
             }
@@ -285,23 +293,23 @@ enum PlayerMapper {
 
     /// Button map: missing = keep, key+null or non-map = INVALID_ARGUMENT (padding rule). isHidden is a non-null Bool.
     /// nativeImageName: missing = keep the image, key+null = clear (nullable field rule), non-String = INVALID_ARGUMENT.
-    private static func mergeButton(_ pip: Args, _ key: String,
-                                    _ current: ShoplivePlayerConfiguration.ButtonOptions) throws -> ShoplivePlayerConfiguration.ButtonOptions {
+    private static func mergeButton(_ pip: Args, _ key: String, _ current: ShoplivePlayerConfiguration.ButtonOptions,
+                                    warn: Bool) throws -> ShoplivePlayerConfiguration.ButtonOptions {
         guard let a = try pip.optArgs(key) else {
             if pip.has(key) { throw BridgeArgumentError(key: key, expected: "non-null value", actual: "null") }
             return current
         }
         var button = current
         if let v = try nonNullBool(a, "isHidden") { button.isHidden = v }
-        if a.has(nativeImageName) { button.image = try a.optString(nativeImageName).flatMap { resolveImage(key, $0) } }
+        if a.has(nativeImageName) { button.image = try a.optString(nativeImageName).flatMap { resolveImage(key, $0, warn: warn) } }
         return button
     }
 
     /// App bundle Asset Catalog image. Not found or "" never fails the call (contract 3): log once, no image -> the SDK draws
     /// the server asset or its default.
-    private static func resolveImage(_ key: String, _ name: String) -> UIImage? {
+    private static func resolveImage(_ key: String, _ name: String, warn: Bool) -> UIImage? {
         let image = name.isEmpty ? nil : UIImage(named: name)
-        if image == nil {
+        if image == nil, warn {
             bridgeLog("ShoplivePlayer", "configuration.pip.\(key).\(nativeImageName) '\(name)' is not an image in the app bundle; using the server asset or the SDK default")
         }
         return image

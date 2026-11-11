@@ -47,7 +47,7 @@ void main() {
           isDragOutToCloseEnabled: false,
         ),
         sound: ShopliveSoundOptions(muteOnStart: true),
-        android: ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: true),
+        android: ShopliveAndroidPlayerOptions(backPressEntersPip: true),
         customParameters: {'a': 'b'},
       ),
     );
@@ -159,6 +159,7 @@ void main() {
     expect(c.customParameters, {'a': 'b'});
     expect(c.android!.isVolumeKeyEnabled, isNull);
     expect(c.android!.closeWhenAppDestroyed, isTrue);
+    expect(c.android!.backPressEntersPip, isFalse); // case: B-1 (R6-D1) — wire 키 enterOSPipOnBackPressed → 새 필드
   });
 
   // case: F-03
@@ -244,5 +245,47 @@ void main() {
     expect(pip.closeButton!.isHidden, isFalse);
     expect(pip.closeButton!.nativeImageName, isNull);
     expect(pip.restoreButton!.isHidden, isNull);
+  });
+
+  // case: B-1 (R6-D1, SMV-1899 D8) — backPressEntersPip와 deprecated 별칭은 한 값, 둘 다 주면 새 이름, wire 키는 3.0.3 이름(W1)
+  test('android.backPressEntersPip and the deprecated enterOSPipOnBackPressed alias', () async {
+    // ignore: deprecated_member_use_from_same_package
+    const legacy = ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: false);
+    expect(legacy.backPressEntersPip, isFalse);
+    // ignore: deprecated_member_use_from_same_package
+    expect(legacy.enterOSPipOnBackPressed, isFalse);
+    // ignore: deprecated_member_use_from_same_package
+    const both = ShopliveAndroidPlayerOptions(backPressEntersPip: true, enterOSPipOnBackPressed: false);
+    expect(both.backPressEntersPip, isTrue);
+    for (final o in [const ShopliveAndroidPlayerOptions(backPressEntersPip: true), legacy, both, const ShopliveAndroidPlayerOptions(isStatusBarVisible: false)]) {
+      await player.setConfiguration(ShoplivePlayerConfiguration(android: o));
+    }
+    expect(calls.map((c) => (c.arguments as Map)['configuration']).toList(), [
+      {'android': {'enterOSPipOnBackPressed': true}},
+      {'android': {'enterOSPipOnBackPressed': false}},
+      {'android': {'enterOSPipOnBackPressed': true}},
+      {'android': {'isStatusBarVisible': false}},
+    ]);
+  });
+
+  // case: R-3·R-4 (R6-D2, SMV-1899 D9) — auto ↔ wire 'default'(유일한 이름 예외), 나머지는 enum 이름, 'auto'·미지 값은 unknown
+  test('ShopliveResizeMode.auto uses the wire value default', () async {
+    expect(ShopliveResizeMode.values, [ShopliveResizeMode.fill, ShopliveResizeMode.fit, ShopliveResizeMode.auto, ShopliveResizeMode.unknown]);
+    await player.setResizeMode(ShopliveResizeMode.auto);
+    await player.setResizeMode(ShopliveResizeMode.fill);
+    expect(calls.map((c) => c.arguments).toList(), [
+      {'mode': 'default'},
+      {'mode': 'fill'},
+    ]);
+    for (final (raw, mode) in [
+      ('default', ShopliveResizeMode.auto),
+      ('fill', ShopliveResizeMode.fill),
+      ('fit', ShopliveResizeMode.fit),
+      ('auto', ShopliveResizeMode.unknown),
+      ('weird', ShopliveResizeMode.unknown),
+    ]) {
+      responder = (_) => raw;
+      expect(await player.getResizeMode(), mode, reason: raw);
+    }
   });
 }

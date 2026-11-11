@@ -125,14 +125,9 @@ internal class PlayerMethodHandler<H : Any>(
         k.GET_STATE -> PlayerMapper.stateToWire(port?.state ?: ShoplivePlayerState.Idle)
         k.GET_CURRENT_CAMPAIGN -> PlayerMapper.campaignToWire(port?.currentCampaign)
         k.IS_RUNNING -> port?.isRunning ?: false
-        k.SET_CONFIGURATION -> {
-            val merged = PlayerMapper.mergeConfiguration(currentConfiguration(), args.requireArgs(k.CONFIGURATION), drawableId)
-            port?.configuration = merged
-            savedConfiguration = merged
-            null
-        }
-        // 다음 start에 쓰일 설정(보관값 우선 — iOS 같은 의미). SDK 3.0.4는 실행 중 대입도 받지만 start·play·reload 회차부터 적용한다
-        // (shareScheme·pip 판단만 즉시, ShoplivePlayer.kt 3.0.4 configuration KDoc) → 다음 회차에 쓰일 보관값이 곧 인스턴스 값이다(SMV-1899 A0-4).
+        k.SET_CONFIGURATION -> setConfiguration(args.requireArgs(k.CONFIGURATION))
+        // 다음 start에 쓰일 설정 = 보관값(iOS 같은 의미). 실행 중 인스턴스의 설정은 SDK가 필드별 시점에 반영하므로(3.0.6
+        // ShoplivePlayerControlling.kt:35-50) 보관값과 다를 수 있다 — 그 값은 돌려주지 않는다(SMV-1899 D12).
         k.GET_CONFIGURATION -> PlayerMapper.configurationToWire(currentConfiguration())
         k.SET_REQUEST_TIMEOUT -> registry.setTimeoutMs(
             args.optLong(k.TIMEOUT_MS) ?: throw BridgeArgumentException(k.TIMEOUT_MS, "Int", "missing"),
@@ -141,6 +136,24 @@ internal class PlayerMethodHandler<H : Any>(
         k.RESPOND_CUSTOM_ACTION -> respondCustomAction(args)
         k.RESPOND_FALLBACK -> registry.take(args.requireString(k.REQUEST_ID))?.let { it.respondFallback(); true } ?: false
         else -> throw MethodNotImplemented
+    }
+
+    /**
+     * 보관값과 인스턴스에 같은 partial을 각각 병합한다(SMV-1899 D12). 인스턴스 설정은 보관값과 다를 수 있다 — 프리뷰 프리셋,
+     * SDK가 확장 때 바꾼 값(3.0.6 ShoplivePlayerConfiguration.kt:72-74) — 그래서 보관값으로 덮지 않고 그 위에 partial만 얹는다.
+     * 실행 중 인스턴스에는 type을 넣지 않는다: 떠 있는 미리보기의 프리셋이 깨진다(X2). 비실행(Idle) 인스턴스에는 넣는다:
+     * portForStart가 재사용하고 partial 없는 start는 인스턴스 설정으로 시작하므로(X9·Y2) 다음 start가 최신 type을 받아야 한다.
+     * 두 병합을 모두 계산한 뒤 대입한다 — 인자 오류면 아무것도 바뀌지 않는다. 이미지 해석 실패 경고는 1줄(두 번째 병합은 끔, X10).
+     */
+    private fun setConfiguration(partial: Args): Any? {
+        val saved = PlayerMapper.mergeConfiguration(currentConfiguration(), partial, drawableId)
+        val p = port
+        val instance = p?.let {
+            PlayerMapper.mergeConfiguration(it.configuration, partial, drawableId, applyType = !it.isRunning, warnUnresolvedImage = false)
+        }
+        if (p != null && instance != null) p.configuration = instance
+        savedConfiguration = saved
+        return null
     }
 
     // ---- start (design §2.4 사전검증 순서) ----
@@ -243,9 +256,11 @@ internal class PlayerMethodHandler<H : Any>(
         }
     }
 
-    /** 병합 기준: 보관값 → 인스턴스 값 → SDK 기본 인스턴스(R2-N1, pair #19). */
-    private fun currentConfiguration(): ShoplivePlayerConfiguration =
-        savedConfiguration ?: port?.configuration ?: ShoplivePlayerConfiguration()
+    /**
+     * 병합 기준 = 다음 start가 쓸 값: 보관값 → SDK 기본 인스턴스(R2-N1). 인스턴스 설정으로 떨어지지 않는다 — 프리뷰 프리셋이나 SDK가
+     * 바꾼 값이 보관값으로 굳으면 다음 start가 그 값으로 뜬다(SMV-1899 D12 F24).
+     */
+    private fun currentConfiguration(): ShoplivePlayerConfiguration = savedConfiguration ?: ShoplivePlayerConfiguration()
 
     private fun noHost() = BridgeStateException(BridgeErrorCode.NO_HOST_SCREEN, "no host screen (Activity) attached")
 
@@ -276,11 +291,11 @@ internal class PlayerMethodHandler<H : Any>(
     companion object {
         private const val TAG = "ShoplivePlayerHandler"
 
-        // 인스턴스가 없을 때 조회 기본값 = ShoplivePlayer(Context) 생성자 초기값(javap -c: 104 getstatic ShopliveResizeMode.FILL → putfield resizeMode,
-        // 110 getstatic ShopliveOverlayUIMode.BUILT_IN → putfield overlayUI). SDK에 이 값을 읽을 공개 기본 인스턴스가 없어 상수로 둔다.
+        // 인스턴스가 없을 때 조회 기본값 = ShoplivePlayer(Context) 생성자 초기값 — SDK 3.0.6 소스 ShoplivePlayer.kt:1731(resizeMode DEFAULT,
+        // 3.0.5까지 FILL)·:1748(overlayUI BUILT_IN). SDK에 이 값을 읽을 공개 기본 인스턴스가 없어 상수로 둔다(SMV-1899 D9).
         // configuration 기본값은 ShoplivePlayerConfiguration() 기본 생성자에서 읽는다(currentConfiguration).
-        // TODO(SDP-VERIFY): 요확인 — SDK 버전 업 시 ShoplivePlayer 생성자 초기 resizeMode/overlayUI가 바뀌면 이 상수와 어긋남 · 근거 DRAFT-flutter-sdk-302-android/CFG-02 · 자동 통과 금지(SDK 업데이트 시 javap 재확인)
-        private val DEFAULT_RESIZE_MODE = ShopliveResizeMode.FILL
+        // TODO(SDP-VERIFY): 요확인 — SDK 버전 업 시 ShoplivePlayer 생성자 초기 resizeMode/overlayUI가 바뀌면 이 상수와 어긋남(3.0.6에서 FILL→DEFAULT로 실제 발생) · 근거 DRAFT-flutter-sdk-302-android/CFG-02, SMV-1899 · 자동 통과 금지(SDK 업데이트 시 소스·javap 재확인)
+        private val DEFAULT_RESIZE_MODE = ShopliveResizeMode.DEFAULT
         private val DEFAULT_OVERLAY_UI = ShopliveOverlayUIMode.BUILT_IN
     }
 }

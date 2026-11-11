@@ -70,10 +70,10 @@ class ShoplivePlayer {
 
   Future<bool> isMuted() => _invokeRequired<bool>(_C.isMuted);
 
-  Future<void> setResizeMode(ShopliveResizeMode mode) => _invokeVoid(_C.setResizeMode, {'mode': toWire(mode)});
+  /// [ShopliveResizeMode.auto]는 Android 전용 판정이고 iOS에서는 fill로 적용된다.
+  Future<void> setResizeMode(ShopliveResizeMode mode) => _invokeVoid(_C.setResizeMode, {'mode': resizeModeToWire(mode)});
 
-  Future<ShopliveResizeMode> getResizeMode() async =>
-      parseWireEnum(ShopliveResizeMode.values, await _invokeRequired<String>(_C.getResizeMode), unknown: ShopliveResizeMode.unknown);
+  Future<ShopliveResizeMode> getResizeMode() async => resizeModeFromWire(await _invokeRequired<String>(_C.getResizeMode));
 
   Future<void> setOverlayUI(ShopliveOverlayUIMode mode) => _invokeVoid(_C.setOverlayUI, {'mode': toWire(mode)});
 

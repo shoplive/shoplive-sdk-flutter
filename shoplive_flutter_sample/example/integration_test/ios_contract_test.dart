@@ -72,6 +72,15 @@ void main() {
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));
     });
 
+    // case: R-2 (R6-I1, SMV-1899 D9) — auto (wire 'default') is accepted and applied as fill; getResizeMode returns the real value
+    testWidgets('resizeMode auto is applied as fill on iOS', (_) async {
+      await player.setResizeMode(ShopliveResizeMode.auto);
+      expect(await player.getResizeMode(), ShopliveResizeMode.fill);
+      await player.setResizeMode(ShopliveResizeMode.fit);
+      expect(await player.getResizeMode(), ShopliveResizeMode.fit);
+      await expectLater(player.setResizeMode(ShopliveResizeMode.unknown), _platformError('INVALID_ARGUMENT'));
+    });
+
     // case: D-2, IM-m1 — same type keeps the other fields (Android parity); a different type rebuilds from the preset
     testWidgets('type: same value keeps fields, different value switches preset', (_) async {
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));
