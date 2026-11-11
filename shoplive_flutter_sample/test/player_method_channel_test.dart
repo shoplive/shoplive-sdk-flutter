@@ -29,7 +29,7 @@ void main() {
       'start', 'play', 'stop', 'close', 'reload', 'send', 'setMuted', 'isMuted', 'setResizeMode', 'getResizeMode',
       'setOverlayUI', 'getOverlayUI', 'enterPictureInPicture', 'exitPictureInPicture', 'isInPictureInPicture', 'getState',
       'getCurrentCampaign', 'isRunning', 'setConfiguration', 'getConfiguration', 'setRequestTimeout', 'respondCoupon',
-      'respondCustomAction', 'respondFallback', 'getCampaigns', 'cancelGetCampaigns',
+      'respondCustomAction', 'respondFallback', 'getCampaigns', 'cancelGetCampaigns', 'startPreview',
     ]);
   });
 
@@ -287,5 +287,14 @@ void main() {
       responder = (_) => raw;
       expect(await player.getResizeMode(), mode, reason: raw);
     }
+  });
+
+  // case: S-1·S-5 (R6-D9, SMV-1899 D11) — startPreview는 키만 보낸다, 플랫폼 오류(INVALID_ARGUMENT 등)는 그대로
+  test('startPreview sends the campaign key and propagates PlatformException', () async {
+    await player.startPreview('p');
+    expect(calls.single.method, 'startPreview');
+    expect(calls.single.arguments, {'campaignKey': 'p'});
+    responder = (_) => throw PlatformException(code: 'INVALID_ARGUMENT');
+    await expectLater(player.startPreview(' '), throwsA(isA<PlatformException>().having((e) => e.code, 'code', 'INVALID_ARGUMENT')));
   });
 }

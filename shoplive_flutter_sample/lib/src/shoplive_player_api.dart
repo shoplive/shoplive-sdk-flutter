@@ -76,6 +76,10 @@ final class ShopliveCancelToken {
 
   bool get isCancelled => _cancelled;
 
+  /// 아직 끝나지 않은 호출 수 — 끝난 호출이 토큰에서 떨어지는지 테스트로 고정한다(교차검증 L1).
+  @visibleForTesting
+  int get listenerCount => _listeners.length;
+
   /// 여러 번 불러도 안전하다.
   void cancel() {
     if (_cancelled) return;

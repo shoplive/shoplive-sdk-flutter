@@ -15,6 +15,8 @@ import java.lang.ref.WeakReference
 
 /** ShoplivePlayer 위임 경계(테스트에서 대체). ShoplivePlayerControlling + start/close/isRunning. */
 internal interface PlayerPort : ShoplivePlayerControlling {
+    /** 감싼 SDK 인스턴스 — startPreview가 돌려준 인스턴스가 지금 port와 같은지 가린다(래퍼는 호출마다 새로 만든다, SMV-1899 D11-b). */
+    val instance: Any
     val isRunning: Boolean
     fun start(campaignKey: String, options: ShoplivePlayOptions)
     fun start(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration)
@@ -22,6 +24,7 @@ internal interface PlayerPort : ShoplivePlayerControlling {
 }
 
 internal class SdkPlayerPort(private val player: ShoplivePlayer) : PlayerPort, ShoplivePlayerControlling by player {
+    override val instance: Any get() = player
     override val isRunning: Boolean get() = player.isRunning
     override fun start(campaignKey: String, options: ShoplivePlayOptions) = player.start(campaignKey, options)
     override fun start(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration) =
@@ -33,6 +36,7 @@ internal class SdkPlayerPort(private val player: ShoplivePlayer) : PlayerPort, S
  * 채널 `shoplive_player` 메서드 처리(design.md rev2 §2.4·§4.2). [H]는 호스트 화면(Android: Activity) — JVM 테스트에서 대체.
  *
  * 인스턴스 수명: 인스턴스는 start에서만 만들고, 한 번 start된 인스턴스는 다음 start에 재사용하지 않는다([portForStart]).
+ * 예외는 startPreview 하나 — SDK 정적 ShoplivePlayer.startPreview가 만들거나 고른 인스턴스를 채택한다(SMV-1899 D11-b).
  * 호스트 detach 시 비실행 인스턴스 해제.
  * 설정 보존(R2-N1): 마지막 확정 configuration·resizeMode·overlayUI를 인스턴스와 별도로 보관해 새 인스턴스에 이관.
  * 모든 메서드는 메인 스레드에서 호출된다(MethodChannel).
@@ -40,6 +44,8 @@ internal class SdkPlayerPort(private val player: ShoplivePlayer) : PlayerPort, S
 internal class PlayerMethodHandler<H : Any>(
     private val registry: PendingRequestRegistry,
     private val portFactory: (H) -> PlayerPort,
+    /** SDK ShoplivePlayer.startPreview(context, key) — 정적 API라 JVM 테스트가 대역을 넣는다(portFactory와 같은 관례). */
+    private val previewLauncher: (H, String) -> PlayerPort,
     private val liveDelegate: () -> ShoplivePlayerDelegate,
     /** 앱 drawable 이름 → 리소스 ID(PIP 버튼 nativeImageName, SMV-1899 A3). 플러그인이 applicationContext로 만든다. 못 찾으면 경고 1줄 후 null. */
     private val drawableId: (String) -> Int?,
@@ -89,6 +95,7 @@ internal class PlayerMethodHandler<H : Any>(
      */
     fun handle(method: String, args: Args): Any? = when (method) {
         k.START -> start(args)
+        k.START_PREVIEW -> startPreview(args)
         k.PLAY -> running().play(args.requireString(k.CAMPAIGN_KEY), PlayerMapper.toPlayOptions(args.optArgs(k.PLAY_OPTIONS))).let { null }
         k.STOP -> running().stop().let { null }
         // TODO(SDP-VERIFY): 요확인 — close 이후 응답 대기 중인 쿠폰/커스텀 요청에 respond(타임아웃 폴백 포함)를 호출해도 안전한지 · 근거 DRAFT-flutter-sdk-302-android/T-02 · 자동 통과 금지(실측)
@@ -189,6 +196,32 @@ internal class PlayerMethodHandler<H : Any>(
         return null
     }
 
+    /**
+     * startPreview(SMV-1899 D11). 결정(시청 중 무시 · 같은 키 그대로 · 다른 키 교체 · 새로 띄움)은 SDK가 한다 — 브릿지는 SDK가
+     * 돌려준 인스턴스만 본다. 지금 port와 같은 인스턴스면 아무것도 바꾸지 않고(그 인스턴스의 이벤트·오류는 이미 붙은 delegate로 온다),
+     * 다른 인스턴스면 채택한다. SDK는 새 인스턴스의 빈 키·미초기화 오류와 LOADING·IN_APP_PIP 통지를 반환 전에 내므로
+     * (3.0.6 ShoplivePlayer.kt:1834-1838) 빈 키는 호출 전에 거르고(D11-d), 시작하지 않은 새 인스턴스는 SDK_ERROR로(D11-c),
+     * 시작된 새 인스턴스는 지금 상태를 1번 보충한다(St-a — iOS는 delegate를 먼저 붙여 같은 상태 이벤트를 받는다).
+     * 프리뷰는 SDK 프리셋만 쓴다(createPreview, :1870-1874) — 보관 설정은 적용하지 않고 다음 start용으로 남긴다(D11-i).
+     */
+    private fun startPreview(args: Args): Any? {
+        val currentHost = host ?: throw noHost()
+        val campaignKey = args.requireString(k.CAMPAIGN_KEY)
+        val previous = port
+        val p = previewLauncher(currentHost, campaignKey)
+        if (previous != null && previous.instance === p.instance) return null
+        if (!p.isRunning && !p.isInPictureInPicture) {
+            throw BridgeStateException(BridgeErrorCode.SDK_ERROR, "startPreview: preview not started (not initialized or entry refused)")
+        }
+        // TODO(SDP-VERIFY): 요확인 — port가 아닌 실행 중 인스턴스 채택 시 외부 세션 delegate 탈취 여부(SDK가 호스트 네이티브·다른 엔진의 시청 세션을 돌려준 경우와 방금 만든 프리뷰를 반환값만으로 가를 수 없음, 3.0.6 ShoplivePlayer.kt:1861) · 근거 SMV-1899
+        previous?.let { retire(it) }
+        adopt(p, currentHost)
+        if (p.state != ShoplivePlayerState.Idle) {
+            Bridge.guardCallback(TAG, "previewState") { p.delegate?.onEvent(p, ShoplivePlayerEvent.StateChanged(p.state)) }
+        }
+        return null
+    }
+
     private fun notifyClosed(p: PlayerPort) = Bridge.guardCallback(TAG, "notifyClosed") {
         // 사유 = appRequest: 다른 방송으로의 교체는 SDK close()와 같은 APP_REQUEST(ShopliveCloseReason KDoc, SMV-1899 A4-3)
         p.delegate?.onEvent(p, ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST)))
@@ -240,12 +273,17 @@ internal class PlayerMethodHandler<H : Any>(
         savedConfiguration?.let { p.configuration = it }
         savedResizeMode?.let { p.resizeMode = it }
         savedOverlayUI?.let { p.overlayUI = it }
+        adopt(p, forHost)
+        return p
+    }
+
+    /** [p]를 현재 port로 삼고 live delegate를 붙인다(create·startPreview 공용). */
+    private fun adopt(p: PlayerPort, forHost: H) {
         val delegate = liveDelegate()
         p.delegate = delegate
         portDelegate = delegate
         port = p
         boundHost = WeakReference(forHost)
-        return p
     }
 
     private fun release(p: PlayerPort) {

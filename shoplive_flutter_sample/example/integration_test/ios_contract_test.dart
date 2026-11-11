@@ -95,6 +95,13 @@ void main() {
       await expectLater(player.setResizeMode(ShopliveResizeMode.unknown), _platformError('INVALID_ARGUMENT'));
     });
 
+    // case: S-5 (R6-I1, SMV-1899 D11-d) — blank / whitespace key is rejected before the SDK
+    testWidgets('startPreview blank key is INVALID_ARGUMENT', (_) async {
+      await expectLater(player.startPreview(''), _platformError('INVALID_ARGUMENT'));
+      await expectLater(player.startPreview('  '), _platformError('INVALID_ARGUMENT'));
+      expect(await player.isRunning(), isFalse);
+    });
+
     // case: D-2, IM-m1 — same type keeps the other fields (Android parity); a different type rebuilds from the preset
     testWidgets('type: same value keeps fields, different value switches preset', (_) async {
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));

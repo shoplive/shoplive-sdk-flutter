@@ -62,12 +62,13 @@ internal object PlayerContract {
     /** 회신을 SDK 콜백 때 보내는 유일한 메서드(SMV-1899 D10). */
     const val GET_CAMPAIGNS = "getCampaigns"
     const val CANCEL_GET_CAMPAIGNS = "cancelGetCampaigns"
+    const val START_PREVIEW = "startPreview"
 
     val METHODS = listOf(
         START, PLAY, STOP, CLOSE, RELOAD, SEND, SET_MUTED, IS_MUTED, SET_RESIZE_MODE, GET_RESIZE_MODE,
         SET_OVERLAY_UI, GET_OVERLAY_UI, ENTER_PIP, EXIT_PIP, IS_IN_PIP, GET_STATE, GET_CURRENT_CAMPAIGN,
         IS_RUNNING, SET_CONFIGURATION, GET_CONFIGURATION, SET_REQUEST_TIMEOUT, RESPOND_COUPON,
-        RESPOND_CUSTOM_ACTION, RESPOND_FALLBACK, GET_CAMPAIGNS, CANCEL_GET_CAMPAIGNS,
+        RESPOND_CUSTOM_ACTION, RESPOND_FALLBACK, GET_CAMPAIGNS, CANCEL_GET_CAMPAIGNS, START_PREVIEW,
     )
 
     /** getCampaigns를 앱이 취소했을 때의 PlatformException.code(Dart ShoplivePlatformErrorCode.cancelled — SMV-1899 D10-f). */

@@ -152,8 +152,10 @@ void main() {
     final token = ShopliveCancelToken();
     final done = ShoplivePlayerAPI.getCampaigns(cancelToken: token);
     final doneId = lastId();
+    expect(token.listenerCount, 1);
     pending[doneId]!.complete({'campaigns': <Object?>[], 'hasMore': false});
     expect((await done).campaigns, isEmpty);
+    expect(token.listenerCount, 0); // 끝난 호출은 토큰에서 떨어진다(오래 사는 토큰이 끝난 호출을 붙잡지 않게 — 교차검증 L1)
     final a = ShoplivePlayerAPI.getCampaigns(cancelToken: token);
     final b = ShoplivePlayerAPI.getCampaigns(cancelToken: token);
     token.cancel();

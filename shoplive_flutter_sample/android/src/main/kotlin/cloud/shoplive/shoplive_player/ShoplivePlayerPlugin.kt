@@ -38,6 +38,7 @@ class ShoplivePlayerPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodC
         val handler = PlayerMethodHandler<Activity>(
             registry = registry,
             portFactory = { activity -> SdkPlayerPort(ShoplivePlayer(activity)) },
+            previewLauncher = { activity, key -> SdkPlayerPort(ShoplivePlayer.startPreview(activity, key)) },
             liveDelegate = { PlayerDelegateBridge(attach, generation, scheduler, events, requests, registry) },
             drawableId = drawableResolver(binding.applicationContext),
         )

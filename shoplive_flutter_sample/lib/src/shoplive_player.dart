@@ -46,6 +46,16 @@ class ShoplivePlayer {
     return _invokeVoid(_C.start, args);
   }
 
+  /// 소리 없는 작은 미리보기 창(in-App PIP)을 띄운다. 시청자가 풀스크린으로 키우면 소리가 켜진다(SMV-1899 D11).
+  /// - 시청 중인 세션이 있으면 아무것도 하지 않는다. 같은 키 미리보기가 떠 있으면 그대로 두고(멈췄거나 창이 없으면 다시 시작),
+  ///   다른 키면 미리보기의 캠페인을 바꾼다 — Android는 네이티브 `ShoplivePlayer.startPreview` 규칙 그대로, iOS는 플러그인이
+  ///   preview 프리셋으로 같은 판단을 흉내 내며 다른 키면 창을 새로 띄운다(위치 초기화, loading → inAppPip를 다시 받음).
+  /// - 호출 시점에 알 수 있는 오류는 이 Future로 온다: 빈·공백 키 `INVALID_ARGUMENT`, 호스트 화면 없음 `NO_HOST_SCREEN`, Android에서
+  ///   SDK가 미리보기를 시작하지 않음(미초기화·진입 거부 — 원인은 구분하지 않는다) `SDK_ERROR`. 떠 있는 미리보기를 다시 시작하다 거부되거나
+  ///   시작 뒤 생긴 오류는 [events]의 error로 온다.
+  /// - 미리보기는 SDK 프리셋만 쓴다 — [setConfiguration]·[setResizeMode]·[setOverlayUI]로 보관한 값은 다음 [start]에 쓰인다.
+  Future<void> startPreview(String campaignKey) => _invokeVoid(_C.startPreview, {'campaignKey': campaignKey});
+
   Future<void> play(String campaignKey, {ShoplivePlayOptions? playOptions}) {
     final args = <String, Object?>{'campaignKey': campaignKey};
     putIfNotNull(args, 'playOptions', playOptions?.toWire());

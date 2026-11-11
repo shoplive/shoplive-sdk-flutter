@@ -3,11 +3,39 @@ import UIKit
 import ShoplivePlayerSDK
 
 /// Thin subclass to observe dismissal (I-R-02). ShoplivePlayerViewController is an open class.
+/// It also owns the facts the startPreview emulation reads (SMV-1899 D11-f) - the controller is the resource, so its facts live
+/// here and not in the handler (CG-2.1).
 final class BridgedPlayerViewController: ShoplivePlayerViewController {
-    var onDismissed: (() -> Void)?
+    /// The current round: a preview round (in-app PIP, muted) or a viewing round, with the key that round was asked for.
+    enum Round {
+        case preview(key: String)
+        case viewing(key: String)
 
-    override init(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration) {
+        var key: String {
+            switch self {
+            case .preview(let key), .viewing(let key): return key
+            }
+        }
+    }
+
+    var onDismissed: (() -> Void)?
+    /// Created by startPreview. Like Android, only such an instance can be a preview (pointer identity, 3.0.6 ShoplivePlayer.kt:1892);
+    /// a controller made by start never becomes one, even after play(pip).
+    let isPreviewInstance: Bool
+    private(set) var round: Round
+
+    init(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration, isPreviewInstance: Bool) {
+        self.isPreviewInstance = isPreviewInstance
+        round = isPreviewInstance ? .preview(key: campaignKey) : .viewing(key: campaignKey)
         super.init(campaignKey: campaignKey, options: options, configuration: configuration)
+    }
+
+    /// Records the round a Dart play opens, with the iOS SDK's own rule: keep + same campaign keeps the form and the mode whether
+    /// floating or not (ShoplivePlayerView.swift:239-241, :261-263, :283-288 @3.0.5), otherwise presentationStyle decides (:287).
+    /// reload keeps the round (it replays lastPlayOptions), so it does not call this.
+    func recordPlay(campaignKey: String, options: ShoplivePlayOptions) {
+        if options.keepWindowStateOnPlayExecuted && campaignKey == round.key { return }
+        round = options.presentationStyle == .pip ? .preview(key: campaignKey) : .viewing(key: campaignKey)
     }
 
     @available(*, unavailable)
@@ -21,7 +49,7 @@ final class BridgedPlayerViewController: ShoplivePlayerViewController {
 
 /// Channel `shoplive_player` methods (Android design section 2.4, iOS design section 2.2).
 /// The iOS SDK has no off-screen player: `start` creates a ShoplivePlayerViewController and presents it (I1).
-/// Instances are created only by `start`; without one, queries return defaults/saved settings and setters only store.
+/// Instances are created only by `start` and `startPreview`; without one, queries return defaults/saved settings and setters only store.
 /// Main thread only (MethodChannel).
 final class PlayerMethodHandler {
     private static let tag = "ShoplivePlayer"
@@ -51,10 +79,13 @@ final class PlayerMethodHandler {
     func handle(_ method: String, _ args: Args) throws -> Any? {
         switch method {
         case "start": return try start(args)
+        case "startPreview": return try startPreview(args)
         case "play":
             let key = try args.requireString("campaignKey")
             let options = try PlayerMapper.toPlayOptions(try args.optArgs("playOptions"))
-            try running().play(campaignKey: key, options: options)
+            let c = try running()
+            c.recordPlay(campaignKey: key, options: options)
+            c.play(campaignKey: key, options: options)
         case "stop": try running().stop()
         case "close": controller?.close() // no instance -> idempotent no-op
         // TODO(SDP-VERIFY): 요확인 — iOS reload가 closed(appRequest)를 내면 브릿지가 플레이어를 닫음(3.0.2부터), 실측 후 후속 티켓 · 근거 SMV-1899
@@ -148,7 +179,42 @@ final class PlayerMethodHandler {
         var configuration = effective
         if let mode = savedResizeMode { configuration.appearance.resizeMode = mode }
         if let ui = savedOverlayUI { configuration.overlay.ui = ui }
-        let next = BridgedPlayerViewController(campaignKey: campaignKey, options: options, configuration: configuration)
+        let next = BridgedPlayerViewController(campaignKey: campaignKey, options: options, configuration: configuration, isPreviewInstance: false)
+        try presentNewSession(next) {
+            if partial != nil {
+                savedConfiguration = effective
+                savedType = type
+            }
+        }
+        return nil
+    }
+
+    // MARK: startPreview (SMV-1899 D11-f: the Android SDK rules emulated with the iOS preview presets)
+
+    /// The iOS SDK 3.0.5 has no startPreview. Same order as Android PreviewLaunchPolicy, using the facts this plugin's controller
+    /// owns (design D11-f table 0-6). Muting while small and unmuting when expanded are the SDK's own (.pip start = preview mode).
+    /// Like Android createPreview, the preview uses the presets only - saved settings stay for the next start.
+    private func startPreview(_ args: Args) throws -> Any? {
+        let campaignKey = try args.requireString("campaignKey") // 0: blank key, before the SDK (D11-d)
+        guard hostScreen.topViewController() != nil else { throw noHostScreen() } // 0
+        if let c = controller, isRunning {
+            // 1-2: a session started by start, or a preview turned into a viewing round by play(fullscreen) -> ignore.
+            guard c.isPreviewInstance, case .preview(let key) = c.round else { return nil }
+            // TODO(SDP-VERIFY): 요확인 — 확장 시 configuration.type이 .live가 되는지 실측(프리뷰를 키우면 SDK reloadAsLive가 type을 .live로 남김 — 3.0.5 ShoplivePlayerView.swift:610-623, 공개 계약 아님) · 근거 SMV-1899
+            if c.configuration.type == .live { return nil } // 3: expanded preview -> viewing
+            if key == campaignKey { return nil } // 4: same key -> keep it
+            // 5: other key -> retire it and present a new preview below (the window comes back at the default position).
+        }
+        // 5-6: new preview controller.
+        // TODO(SDP-VERIFY): 요확인 — iOS SDK 3.0.5가 accessKey 없이 .preview 시작 시 창을 띄우는지·error 이벤트 1회인지 실측 · 근거 SMV-1899
+        let next = BridgedPlayerViewController(campaignKey: campaignKey, options: .preview, configuration: .preview, isPreviewInstance: true)
+        try presentNewSession(next) {}
+        return nil
+    }
+
+    /// Shared by start and startPreview: wires the delegate, presents `next` and replaces the previous controller with the D6
+    /// retire rules. `onAdopt` runs when `next` becomes the current controller (synchronously in every branch).
+    private func presentNewSession(_ next: BridgedPlayerViewController, onAdopt: () -> Void) throws {
         let delegate = makeDelegate(self)
         if let delegate = delegate { next.delegate = delegate } else { next.delegate = DetachedPlayerDelegate.shared }
         next.onDismissed = { [weak self, weak next] in
@@ -157,8 +223,9 @@ final class PlayerMethodHandler {
         }
         guard let previous = controller else {
             guard present(next) else { throw detachUnpresented(next) }
-            adopt(next, delegate: delegate, partial: partial, effective: effective, type: type)
-            return nil
+            adopt(next, delegate: delegate)
+            onAdopt()
+            return
         }
         if previous.presentingViewController == nil || previous.isBeingDismissed {
             // Not on screen (in-app PIP / already going away): present the new player first and retire the previous session
@@ -171,19 +238,21 @@ final class PlayerMethodHandler {
             guard present(next) else {
                 // Unmark only, no synthetic closed (design 9): the certain failure path is no host screen (HostScreen.swift:30),
                 // decided synchronously on the main thread before the new controller loads, so nothing can have closed the
-                // previous session meanwhile - it stays the current one. (The :40-41 present-refused path is in the TODO above.)
+                // previous session meanwhile - it stays the current one. (The :40-41 present-refused path is covered by the SDP-VERIFY marker above.)
                 previousBridge?.isRetired = false
                 throw detachUnpresented(next)
             }
             retire(previous)
-            adopt(next, delegate: delegate, partial: partial, effective: effective, type: type)
-            return nil
+            adopt(next, delegate: delegate)
+            onAdopt()
+            return
         }
         // Still presented: it must be dismissed before the next one can be presented (presenting over it would stack two players,
         // and dismissing it later would also dismiss the new one), so present-first is impossible here. If the deferred
         // presentation fails, Dart gets one closed state for the retired session (R4-02).
         retire(previous)
-        adopt(next, delegate: delegate, partial: partial, effective: effective, type: type)
+        adopt(next, delegate: delegate)
+        onAdopt()
         previous.dismiss(animated: false) { [weak self, weak next] in
             guard let self = self, let next = next, self.controller === next else { return }
             // TODO(SDP-VERIFY): 요확인 — 이전 플레이어 dismiss 후 새 플레이어 present 실패는 start가 이미 성공을 반환해 Dart에 closed 상태로만 알림(스트리머 IM-m3와 같은 구조), 전환 화면 실측 · 근거 SMV-1749
@@ -193,7 +262,6 @@ final class PlayerMethodHandler {
                 if self.controller === next { self.release(next); self.controller = nil }
             }
         }
-        return nil
     }
 
     // MARK: lifecycle
@@ -240,14 +308,9 @@ final class PlayerMethodHandler {
         if !previous.state.isClosed { previous.close() }
     }
 
-    private func adopt(_ next: BridgedPlayerViewController, delegate: PlayerDelegateBridge?, partial: Args?,
-                       effective: ShoplivePlayerConfiguration, type: String) {
+    private func adopt(_ next: BridgedPlayerViewController, delegate: PlayerDelegateBridge?) {
         controller = next
         liveDelegate = delegate
-        if partial != nil {
-            savedConfiguration = effective
-            savedType = type
-        }
     }
 
     /// D-9: overFullScreen keeps the Flutter screen underneath (in-app PIP).
