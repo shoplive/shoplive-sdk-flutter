@@ -8,7 +8,8 @@ enum ShoplivePlayerState { idle, loading, playing, paused, inAppPip, closed, unk
 /// - [userAction]: 사용자가 닫음(닫기 버튼·PIP 끌어내기·뒤로가기 등)
 /// - [appRequest]: 앱 또는 SDK가 닫음(`stop`·`close`·SDK 내부 정지, 새 `start`가 화면을 띄우지 못해 이전 세션이 끝난 경우).
 ///   `start`로 교체된 이전 세션의 closed는 오지 않는다. `reload()`는 closed(appRequest) 뒤 loading이 이어진다
-///   (세션 종료가 아님 — iOS는 시뮬레이터 확인, 실기기 확인 중 SMV-1899 A0-6).
+///   (세션 종료가 아님 — iOS는 시뮬레이터 확인, 실기기 확인 중 SMV-1899 A0-6). 단 iOS in-app PIP 중 reload는 정지를 거치지 않아
+///   closed가 오지 않는다(iOS SDK 3.0.5 ShoplivePlayerView.swift:500-507).
 /// - [accessKeyChanged]: 다른 accessKey로 `Shoplive.initialize`를 다시 불러 이전 키의 재생이 닫힘
 enum ShopliveCloseReason { userAction, appRequest, accessKeyChanged, unknown }
 
