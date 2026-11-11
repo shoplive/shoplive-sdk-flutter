@@ -156,7 +156,7 @@ internal object PlayerMapper {
                 pip = cp.copy(
                     isInAppPipEnabled = nonNullBool(pip, "isInAppPipEnabled") ?: cp.isInAppPipEnabled,
                     isOSPipEnabled = nonNullBool(pip, "isOSPipEnabled") ?: cp.isOSPipEnabled,
-                    enterOSPipOnBackPressed = nonNullBool(android, "enterOSPipOnBackPressed") ?: cp.enterOSPipOnBackPressed,
+                    backPressEntersPip = nonNullBool(android, "enterOSPipOnBackPressed") ?: cp.backPressEntersPip,
                     defaultPosition = nonNullEnum(pip, "defaultPosition", PIP_POSITION) ?: cp.defaultPosition,
                     scale = nonNullFloat(pip, "scale") ?: cp.scale,
                     aspectRatio = nonNullEnum(pip, "aspectRatio", PIP_RATIO) ?: cp.aspectRatio,
@@ -297,7 +297,7 @@ internal object PlayerMapper {
         "overlay" to mapOf("ui" to wireOf(c.overlay.ui, OVERLAY_UI)),
         "customParameters" to c.customParameters,
         "android" to mapOf(
-            "enterOSPipOnBackPressed" to c.pip.enterOSPipOnBackPressed,
+            "enterOSPipOnBackPressed" to c.pip.backPressEntersPip,
             "isVolumeKeyEnabled" to c.sound.isVolumeKeyEnabled,
             "autoResumeOnFocusGained" to c.sound.autoResumeOnFocusGained,
             "isStatusBarVisible" to c.appearance.isStatusBarVisible,

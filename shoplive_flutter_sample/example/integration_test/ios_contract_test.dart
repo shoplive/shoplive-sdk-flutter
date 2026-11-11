@@ -15,7 +15,7 @@ void main() {
   group('core', () {
     // case: N-01
     testWidgets('getSdkVersion returns the iOS SDK version', (_) async {
-      expect(await Shoplive.getSdkVersion(), '3.0.4');
+      expect(await Shoplive.getSdkVersion(), '3.0.5');
     });
 
     // case: F-04

@@ -69,7 +69,7 @@ android {
 
 dependencies {
     // FIXME(SDP-VERIFY): 요확인 — shoplive_core/player/streamer 3플러그인의 Shoplive SDK 버전은 같은 값(3.0.4)으로 맞춰야 함. 어긋나면 Gradle이 가장 높은 shoplive-core를 골라 바이너리가 어긋날 수 있음. 완화책(strictly/BOM)은 미결 · 근거 DRAFT-flutter-sdk-302-android/PKG-01 · 자동 통과 금지(:app:dependencies 확인)
-    implementation("cloud.shoplive:shoplive-player-sdk:3.0.4")
+    implementation("cloud.shoplive:shoplive-player-sdk:3.0.6")
     // HostLifecycleShim: ViewTreeLifecycleOwner(2.3.0+). SDK가 이미 2.5.1+를 끌어오므로 버전을 올리지 않는 하한으로 선언.
     implementation("androidx.lifecycle:lifecycle-runtime:2.5.1")
 
