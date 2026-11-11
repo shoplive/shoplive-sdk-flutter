@@ -26,7 +26,7 @@ Apps that only play videos add `shoplive_player`, and streamer binaries stay out
 
 ```yaml
 dependencies:
-  shoplive_player: 3.0.3   # includes shoplive_core
+  shoplive_player: 3.0.4   # includes shoplive_core
 ```
 
 > `shoplive_core`, `shoplive_player` and `shoplive_streamer` wrap the same SDK release and must use the same version. `shoplive_player` and `shoplive_streamer` pin `shoplive_core` to their own version. (Maintainers: publish `shoplive_core` first, then `shoplive_player` and `shoplive_streamer`.)

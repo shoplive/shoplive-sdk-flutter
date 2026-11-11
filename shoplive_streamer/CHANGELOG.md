@@ -1,3 +1,7 @@
+## 3.0.4
+
+Built on Shoplive Android SDK 3.0.6 and iOS SDK 3.0.5. Native SDK release notes: [Android](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.6) · [iOS](https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5).
+
 ### Changed
 * The streamer Dart API is unchanged by the Android SDK 3.0.6 / iOS SDK 3.0.5 update (no streamer source change in Android 3.0.5–3.0.6, no iOS streamer interface change in 3.0.5).
 * Android: starting a broadcast without an access key (before `Shoplive.initialize`, or with a blank key) now reports the error code `NOT_INITIALIZED_ACCESS_KEY` instead of `UNEXPECTED_ERROR`. Keep treating `code` as an opaque string.

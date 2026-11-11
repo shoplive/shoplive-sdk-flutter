@@ -1,3 +1,7 @@
+## 3.0.4
+
+Built on Shoplive Android SDK 3.0.6 and iOS SDK 3.0.5. Native SDK release notes: [Android](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.6) · [iOS](https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5).
+
 ### Breaking
 * `ShoplivePlayerEvent` has a new subtype, `ShoplivePlayerShareRequested`. A `switch` over `ShoplivePlayerEvent` without a `default` (or `_`) case must add it; code with a `default` case or `is` checks compiles unchanged. The native SDKs 3.0.4 made the same change.
 * `ShopliveResizeMode` has a new value, `auto` (before `unknown`). A `switch` over `ShopliveResizeMode` without a `default` (or `_`) case must add it.

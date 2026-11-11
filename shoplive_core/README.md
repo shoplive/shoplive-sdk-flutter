@@ -17,7 +17,7 @@ It is re-exported by `shoplive_player` and `shoplive_streamer`. Add it directly 
 
 ```yaml
 dependencies:
-  shoplive_core: 3.0.3
+  shoplive_core: 3.0.4
 ```
 
 ## Android: Maven repository setup
