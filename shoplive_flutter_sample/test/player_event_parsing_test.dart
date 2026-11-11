@@ -48,4 +48,54 @@ void main() {
     expect(p('not a map'), isA<ShoplivePlayerUnknownEvent>());
     expect(p(null), isA<ShoplivePlayerUnknownEvent>());
   });
+
+  // case: A4-1 (R-D1, SMV-1899) — closed + closeReason 3종
+  test('stateChanged closed carries closeReason', () {
+    for (final r in ['userAction', 'appRequest', 'accessKeyChanged']) {
+      final e = p({'type': 'stateChanged', 'state': 'closed', 'closeReason': r}) as ShoplivePlayerStateChanged;
+      expect([e.state, e.closeReason?.name], [ShoplivePlayerState.closed, r]);
+    }
+  });
+
+  // case: A4-2 (R-D2, SMV-1899) — 미지 문자열·비문자열·null 값 → unknown, 키 없음 → null, closed 아닌 상태의 키 → null
+  test('closeReason: unknown values, missing key, non-closed state', () {
+    ShoplivePlayerStateChanged s(Map<String, Object?> m) => p({'type': 'stateChanged', ...m}) as ShoplivePlayerStateChanged;
+    expect(s({'state': 'closed', 'closeReason': 'kicked'}).closeReason, ShopliveCloseReason.unknown);
+    expect(s({'state': 'closed', 'closeReason': 3}).closeReason, ShopliveCloseReason.unknown);
+    expect(s({'state': 'closed', 'closeReason': null}).closeReason, ShopliveCloseReason.unknown);
+    expect(s({'state': 'closed'}).closeReason, isNull);
+    expect(s({'state': 'playing', 'closeReason': 'userAction'}).closeReason, isNull);
+    expect(s({'state': 'playing', 'closeReason': 'userAction'}).state, ShoplivePlayerState.playing);
+  });
+
+  // case: A4-4 (R-D4, SMV-1899) — ShoplivePlayerState enum 값·순서 불변(비파괴), 기존 생성자 호환
+  test('ShoplivePlayerState values unchanged and the constructor stays compatible', () {
+    expect(ShoplivePlayerState.values.map((v) => v.name).toList(), ['idle', 'loading', 'playing', 'paused', 'inAppPip', 'closed', 'unknown']);
+    expect(ShopliveCloseReason.values.map((v) => v.name).toList(), ['userAction', 'appRequest', 'accessKeyChanged', 'unknown']);
+    const legacy = ShoplivePlayerStateChanged(ShoplivePlayerState.closed);
+    expect(legacy.closeReason, isNull);
+  });
+
+  // case: A1-3 (R-D3, SMV-1899) — shareRequested 전 필드 / 전부 null / 비문자열 필드는 그 필드만 null
+  test('shareRequested parses ShopliveShareInfo', () {
+    ShopliveShareInfo info(Map<String, Object?> m) => (p({'type': 'shareRequested', ...m}) as ShoplivePlayerShareRequested).info;
+    final full = info({'url': 'https://s/1', 'campaignKey': 'k', 'title': 't', 'descriptionText': 'd', 'thumbnailUrl': 'https://s/p.png'});
+    expect([full.url, full.campaignKey, full.title, full.descriptionText, full.thumbnailUrl], ['https://s/1', 'k', 't', 'd', 'https://s/p.png']);
+    final empty = info({'url': null, 'campaignKey': null, 'title': null, 'descriptionText': null, 'thumbnailUrl': null});
+    expect([empty.url, empty.campaignKey, empty.title, empty.descriptionText, empty.thumbnailUrl], everyElement(isNull));
+    final missing = info({});
+    expect([missing.url, missing.campaignKey, missing.title, missing.descriptionText, missing.thumbnailUrl], everyElement(isNull));
+    final bad = info({'url': 1, 'campaignKey': 'k', 'title': true});
+    expect([bad.url, bad.campaignKey, bad.title], [null, 'k', null]);
+  });
+
+  // case: E-1 (R6-D10, SMV-1899) — Android 3.0.6 PIP 권한 꺼짐(9511)은 코드 문자열 그대로 error 이벤트로 온다(브릿지 패스스루)
+  test('PIP_DISABLED_BY_USER error event keeps code and rawCode', () {
+    final err = (p({
+      'type': 'error',
+      'error': {'code': 'PIP_DISABLED_BY_USER', 'message': 'm', 'rawCode': 9511, 'recoverable': false},
+    }) as ShoplivePlayerErrorEvent)
+        .error;
+    expect([err.code, err.rawCode, err.recoverable], ['PIP_DISABLED_BY_USER', 9511, false]);
+  });
 }

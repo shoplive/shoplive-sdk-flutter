@@ -24,8 +24,26 @@ void main() {
     final state = await ShoplivePlayer.instance.getState();
     debugPrint('SMOKE_RESULT running=$running state=${state.name} events=${events.map((e) => e.runtimeType).toSet()}');
     expect(running, isTrue);
+    // R-I2 (SMV-1899 A4-1, D6 non-regression): the current session's closed must reach Dart with closeReason appRequest -
+    // the bridge's retired mark is set only on replacement, never on the current bridge.
+    final closedBefore = events.length;
     await ShoplivePlayer.instance.close();
-    await tester.pump(const Duration(seconds: 2));
+    List<ShoplivePlayerStateChanged> closedAfter() => events
+        .skip(closedBefore)
+        .whereType<ShoplivePlayerStateChanged>()
+        .where((e) => e.state == ShoplivePlayerState.closed)
+        .toList();
+    for (var i = 0; i < 10 && closedAfter().isEmpty; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    await tester.pump(const Duration(seconds: 1)); // let a duplicate closed show up, if any
+    final closed = closedAfter();
+    debugPrint('SMOKE_CLOSED count=${closed.length} reasons=${closed.map((e) => e.closeReason?.name).toList()} '
+        'eventsAfterClose=${events.skip(closedBefore).map((e) => e.runtimeType).toList()}');
+    expect(closed.length, 1,
+        reason: 'expected exactly one stateChanged(closed) within 10s after close() - 0 means the current bridge dropped it '
+            '(D6 retired set on the wrong path?) or the SDK did not report it; >1 means a duplicate closed');
+    expect(closed.single.closeReason, ShopliveCloseReason.appRequest, reason: 'close() is an app request (SMV-1899 A4)');
     await sub.cancel();
   });
 }

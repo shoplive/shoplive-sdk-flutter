@@ -14,9 +14,9 @@ import 'package:shoplive_streamer/shoplive_streamer.dart'
 
 import 'studio_login.dart';
 
-// Shoplive 3.0.3 데모(DRAFT-flutter-sdk-302-android S9, SMV-1749): shoplive_core · shoplive_player · shoplive_streamer.
+// Shoplive 3.0.4 데모(DRAFT-flutter-sdk-302-android S9, SMV-1749, SMV-1899): shoplive_core · shoplive_player · shoplive_streamer.
 //
-// 빌드 설정(Android): Shoplive SDK는 https://sdk.shoplive.cloud/maven-repo 에서 받는다(3.0.3은 Maven Central에 없음).
+// 빌드 설정(Android): Shoplive SDK는 https://sdk.shoplive.cloud/maven-repo 에서 받는다(Shoplive Android SDK는 Maven Central에 없음).
 // 플러그인이 cloud.shoplive 그룹을 exclusiveContent로 이 저장소에만 묶는다(플러그인 android/build.gradle 참고).
 // minSdk 23, compileSdk 36, Java 17이 필요하다.
 //
@@ -52,7 +52,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(title: 'Shoplive 3.0.3 sample', home: ShopliveSamplePage());
+    return const MaterialApp(title: 'Shoplive 3.0.4 sample', home: ShopliveSamplePage());
   }
 }
 
@@ -62,7 +62,7 @@ class ShopliveSamplePage extends StatefulWidget {
   /// 테스트에서 가짜 로그인 서버를 넣기 위한 주입점. null이면 실제 스튜디오 로그인.
   final StudioLogin? studioLogin;
 
-  static const String title = 'Shoplive SDK 3.0.3 sample';
+  static const String title = 'Shoplive SDK 3.0.4 sample';
 
   @override
   State<ShopliveSamplePage> createState() => _ShopliveSamplePageState();
@@ -94,7 +94,11 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
   bool _muted = false;
   // OS PIP 사용 여부 — 끄면 in-App PIP(미니) 상태에서 홈으로 나갈 때 OS PIP 없이 백그라운드로 내려간다. 모든 start 경로에 함께 실린다.
   bool _osPipEnabled = true;
+  bool _pipCloseHidden = false;
+  bool _pipRestoreHidden = false;
   ShoplivePlayerState _playerState = ShoplivePlayerState.idle;
+  // 마지막 closed의 이유(SDK 3.0.4). closed가 아닌 상태가 오면 비운다.
+  ShopliveCloseReason? _closeReason;
   ShopliveBroadcastState _broadcastState = ShopliveBroadcastState.idle;
 
   @override
@@ -127,9 +131,12 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
 
   void _onPlayerEvent(ShoplivePlayerEvent e) {
     switch (e) {
-      case ShoplivePlayerStateChanged(:final state):
-        setState(() => _playerState = state);
-        _append('player state → ${state.name}');
+      case ShoplivePlayerStateChanged(:final state, :final closeReason):
+        setState(() {
+          _playerState = state;
+          _closeReason = closeReason;
+        });
+        _append('player state → ${state.name}${closeReason == null ? '' : ' (${closeReason.name})'}');
       case ShopliveCampaignStatusChanged(:final status):
         _append('campaign status → ${status.name}');
       case ShopliveCampaignInfoReceived(:final info):
@@ -146,6 +153,10 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
         _append('web command → $name');
       case ShopliveUserNameUpdateRequested():
         _append('user name update requested');
+      case ShoplivePlayerShareRequested(:final info):
+        // navigation.isCustomShareEnabled=true일 때만 온다 — 실제 앱은 여기서 자기 공유 화면을 띄운다(샘플은 표시만).
+        _append('share requested → url=${info.url} key=${info.campaignKey} title=${info.title}');
+        _toast('share: ${info.url ?? '(no url)'}');
       case ShoplivePlayerUnknownEvent(:final rawType):
         _append('unknown player event → $rawType');
     }
@@ -251,7 +262,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
           pip: ShoplivePipOptions(isInAppPipEnabled: true, isOSPipEnabled: _osPipEnabled),
           sound: const ShopliveSoundOptions(muteOnStart: false, mixWithOthers: true),
           navigation: ShopliveNavigationOptions(shareScheme: shareScheme.isEmpty ? null : shareScheme),
-          android: const ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: true),
+          android: const ShopliveAndroidPlayerOptions(backPressEntersPip: true),
         ),
       ),
     );
@@ -327,7 +338,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
               child: ListView(
                 padding: const EdgeInsets.all(12),
                 children: [
-                  Text('player: ${_playerState.name}   broadcast: ${_broadcastState.name}',
+                  Text('player: ${_playerState.name}${_closeReason == null ? '' : ' (${_closeReason!.name})'}   broadcast: ${_broadcastState.name}',
                       style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: 12),
                   _outlinedField(_accessKey, 'Access key'),
@@ -379,7 +390,7 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
                     expandedCrossAxisAlignment: CrossAxisAlignment.start,
-                    title: const Text('고급 제어 (3.0.3 API 개별 호출)'),
+                    title: const Text('고급 제어 (3.0.4 API 개별 호출)'),
                     children: _advancedControls(),
                   ),
                 ],
@@ -443,6 +454,13 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
               ),
             ),
           ),
+          // SMV-1899 수동 검증용: 네이티브 startPreview(Android) / 플러그인 흉내(iOS), 방송 목록 조회
+          _button('startPreview()', () => _player.startPreview(_campaignKey.text.trim())),
+          _button('getCampaigns', () async {
+            final r = await ShoplivePlayerAPI.getCampaigns(request: const ShopliveCampaignListRequest(size: 5));
+            final items = r.campaigns.map((c) => '${c.campaignKey}:${c.lifecycle.status.runtimeType}');
+            return '${r.campaigns.length}건 hasMore=${r.hasMore} ${items.join(', ')}';
+          }),
           _button('play', () => _player.play(_campaignKey.text.trim())),
           _button('stop', _player.stop),
           _button('reload', _player.reload),
@@ -456,8 +474,8 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
           _button('exit PiP', _player.exitPictureInPicture),
           _button('state', () async => (await _player.getState()).name),
           _button('resize fit', () => _player.setResizeMode(ShopliveResizeMode.fit)),
-          // OS PiP on/off — 끄면 홈으로 나갈 때 OS PIP 없이 백그라운드로 내려간다. SDK 는 IDLE 에서만 설정을 받으므로
-          // 이미 한 번 재생했다면 앱을 다시 띄운 뒤 첫 재생 전에 누른다. 값은 모든 start 경로(PLAY 포함)에 함께 실린다.
+          // OS PiP on/off — 끄면 홈으로 나갈 때 OS PIP 없이 백그라운드로 내려간다. 값은 모든 start 경로(PLAY 포함)에 함께 실린다
+          // (재생 중 바꾸면 Android는 바로, iOS는 다음 start·play·reload부터 — README Configuration).
           for (final enabled in [false, true])
             _button('OS PiP ${enabled ? 'on' : 'off'}', () async {
               setState(() => _osPipEnabled = enabled);
@@ -469,10 +487,49 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
               'PiP drag-out close ${enabled ? 'on' : 'off'}',
               () => _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(isDragOutToCloseEnabled: enabled))),
             ),
+          // 공유를 앱이 처리(3.0.4) — 켜면 공유 탭 때 기본 시트 대신 share requested 이벤트가 온다. 재생 중이면 Android는 바로, iOS는 다음 start·play·reload부터.
+          for (final enabled in [false, true])
+            _button(
+              'custom share ${enabled ? 'on' : 'off'}',
+              () => _player.setConfiguration(ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: enabled))),
+            ),
+          // in-App PIP 버튼(3.0.4) — 숨김 토글과 앱 네이티브 이미지(Android res/drawable · iOS Assets.xcassets의 sample_pip_*).
+          // 재생 중이면 Android는 바로, iOS는 다음 start·play·reload부터 적용.
+          _button('PiP close ${_pipCloseHidden ? 'show' : 'hide'}', () async {
+            final hidden = !_pipCloseHidden;
+            await _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(closeButton: ShopliveButtonOptions(isHidden: hidden))));
+            setState(() => _pipCloseHidden = hidden);
+            return 'closeButton.isHidden=$hidden';
+          }),
+          _button('PiP restore ${_pipRestoreHidden ? 'show' : 'hide'}', () async {
+            final hidden = !_pipRestoreHidden;
+            await _player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(restoreButton: ShopliveButtonOptions(isHidden: hidden))));
+            setState(() => _pipRestoreHidden = hidden);
+            return 'restoreButton.isHidden=$hidden';
+          }),
+          _button(
+            'PiP sample images',
+            () => _player.setConfiguration(const ShoplivePlayerConfiguration(
+              pip: ShoplivePipOptions(
+                closeButton: ShopliveButtonOptions(nativeImageName: 'sample_pip_close'),
+                restoreButton: ShopliveButtonOptions(nativeImageName: 'sample_pip_restore'),
+              ),
+            )),
+          ),
+          // 빈 이름은 해석 실패와 같다 — 경고 로그 후 이미지 없음(서버 에셋 → SDK 기본, 3.0.3 외형).
+          _button(
+            'PiP default images',
+            () => _player.setConfiguration(const ShoplivePlayerConfiguration(
+              pip: ShoplivePipOptions(
+                closeButton: ShopliveButtonOptions(nativeImageName: ''),
+                restoreButton: ShopliveButtonOptions(nativeImageName: ''),
+              ),
+            )),
+          ),
           _button('config', () async {
             final c = await _player.getConfiguration();
             return 'type=${c.type?.name} inAppPip=${c.pip?.isInAppPipEnabled} osPip=${c.pip?.isOSPipEnabled} dragOutClose=${c.pip?.isDragOutToCloseEnabled} '
-                'muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
+                'customShare=${c.navigation?.isCustomShareEnabled} closeHidden=${c.pip?.closeButton?.isHidden} restoreHidden=${c.pip?.restoreButton?.isHidden} muteOnStart=${c.sound?.muteOnStart} overlay=${c.overlay?.ui?.name}';
           }),
         ]),
         _section('Streamer'),

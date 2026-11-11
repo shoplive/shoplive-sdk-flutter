@@ -1,3 +1,13 @@
+### Added
+* `ShoplivePlatformErrorCode.cancelled` (`'CANCELLED'`): the code of a `shoplive_player` `ShoplivePlayerAPI.getCampaigns` call cancelled with its `ShopliveCancelToken`.
+
+### Changed
+* Calling `Shoplive.initialize` with a different access key now closes viewer players started with the previous key. `shoplive_player` reports it as `stateChanged(closed)` with `closeReason: accessKeyChanged`. Android: if you log users in with `ShopliveUser.token`, call `Shoplive.setUser` again after the new `initialize`.
+* `Shoplive.setUser` / `logout` while a player is showing reload only the player's web overlay with the new identity; the video and the window stay, and `reload()` is not needed. iOS: `ShopliveUser.token` and `ShopliveUser.profile` replace each other (setting one clears the other).
+* Android: `shoplive-core`, `shoplive-player-sdk` and `shoplive-streamer-sdk` 3.0.6 are obfuscated and must use the same version (a mismatch fails at runtime with `NoSuchMethodError`). The three Flutter packages already pin the same version; check a release build of your app once after upgrading.
+* Android: the `exclusiveContent` guard for the `cloud.shoplive` group and the `constraintlayout:2.2.1` pin are unchanged. Kotlin stays 1.9.25 (same as the SDK 3.0.6 POM).
+* iOS: downloads the SDK 3.0.5 XCFrameworks (`ShopliveCore`, `ShopLiveWebRTCHelperSDK`, `WebRTC`) and verifies the new sha256 values.
+
 ## 3.0.3
 
 Built on Shoplive SDK 3.0.3 (Android `cloud.shoplive:shoplive-core:3.0.3`, iOS `ShopliveCore` 3.0.3). No Dart breaking change.

@@ -7,6 +7,7 @@ import cloud.shoplive.player.ShoplivePlayerRequest
 import cloud.shoplive.player.ShoplivePlayerState
 import cloud.shoplive.player.ShopliveResultAlertType
 import cloud.shoplive.player.ShopliveResultStatus
+import cloud.shoplive.player.ShopliveShareInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -175,7 +176,7 @@ class PendingRequestRegistryTest {
     @Test // case: N-03
     fun events_emitted_whenListening() {
         events.onListen(null, eventSink)
-        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.LOADING))
+        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Loading))
         assertEquals(mapOf("type" to "stateChanged", "state" to "loading"), eventSink.events.single())
     }
 
@@ -184,7 +185,7 @@ class PendingRequestRegistryTest {
         events.onListen(null, eventSink)
         requests.onListen(null, requestSink)
         gen.next() // 엔진 detach 이후
-        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.LOADING))
+        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Loading))
         bridge.onRequest(FakePort(), coupon())
         assertEquals(0, eventSink.events.size)
         assertEquals(0, requestSink.events.size)
@@ -206,8 +207,32 @@ class PendingRequestRegistryTest {
         DetachedDelegate.onRequest(FakePort(), coupon())
         DetachedDelegate.onRequest(FakePort(), action())
         DetachedDelegate.onRequest(FakePort(), ShoplivePlayerRequest.Navigation("u"))
-        DetachedDelegate.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.IDLE))
+        DetachedDelegate.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Idle))
         assertEquals(1, couponResults.size)
         assertEquals(1, actionResults.size)
+    }
+
+    @Test // case: A2-1 (D3, 교차검증 1차 LOW) — 리스너 없이 shareRequested: 예외 없이 폐기(경고 로그), 구독 뒤에는 1건 전달
+    fun shareRequested_withoutListener_isDroppedSafely_thenDeliveredOnceListening() {
+        val share = ShoplivePlayerEvent.ShareRequested(ShopliveShareInfo(url = "https://s/1"))
+        bridge.onEvent(FakePort(), share)
+        events.onListen(null, eventSink)
+        bridge.onEvent(FakePort(), share)
+        assertEquals(1, eventSink.events.size)
+        assertEquals("shareRequested", (eventSink.events.single() as Map<*, *>)["type"])
+    }
+
+    @Test // case: A4-5 (R-A8) — retire 뒤 판정: 이벤트 폐기, 요청 폴백 1회(DetachedDelegate와 같은 응답), navigation 버림
+    fun retiredBridge_dropsEvents_fallsBackRequests() {
+        events.onListen(null, eventSink)
+        requests.onListen(null, requestSink)
+        bridge.retire()
+        bridge.onEvent(FakePort(), ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Loading))
+        bridge.onRequest(FakePort(), coupon())
+        bridge.onRequest(FakePort(), ShoplivePlayerRequest.Navigation("u"))
+        assertEquals(0, eventSink.events.size)
+        assertEquals(0, requestSink.events.size)
+        assertEquals(1, couponResults.size)
+        assertEquals(0, registry.size())
     }
 }

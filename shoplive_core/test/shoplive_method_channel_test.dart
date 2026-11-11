@@ -129,8 +129,8 @@ void main() {
 
     // case: N-01
     test('getSdkVersion returns native string', () async {
-      responder = (_) => '3.0.3';
-      expect(await Shoplive.getSdkVersion(), '3.0.3');
+      responder = (_) => '3.0.4';
+      expect(await Shoplive.getSdkVersion(), '3.0.4');
       expect(calls.single.method, 'getSdkVersion');
     });
   });

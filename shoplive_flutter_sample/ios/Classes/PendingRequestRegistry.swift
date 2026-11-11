@@ -67,19 +67,29 @@ final class PlayerDelegateBridge: ShoplivePlayerDelegate {
         self.scheduler = scheduler
     }
 
-    private var isCurrent: Bool { attach?.isCurrent(generation) ?? false }
+    /// Replaced session (D6, SMV-1899 A4-5). Set only by PlayerMethodHandler.retire / the in-app PIP start path; main thread only.
+    var isRetired = false
+
+    /// Current engine generation and not replaced - judged once when the main-hop block runs.
+    private var isLive: Bool { !isRetired && (attach?.isCurrent(generation) ?? false) }
 
     func player(_ player: any ShoplivePlayerControlling, didReceive event: ShoplivePlayerEvent) {
         onMain { [weak self] in
-            guard let self = self, self.isCurrent else { return }
-            if case .stateChanged(.closed) = event { self.handler?.playerDidClose(player) }
+            guard let self = self, self.isLive else { return }
+            // The SDK sends its ShoplivePlayerView as `player`, not the controller, so the handler matches this bridge (SMV-1899 M2).
+            if case .stateChanged(.closed) = event { self.handler?.playerDidClose(reportedBy: self) }
+            // D3(a'): isCustomShareEnabled=true but Dart does not listen -> the SDK shows no sheet either, so log the cause.
+            // The event is still emitted (EventEmitter drops it); judged at delivery, so a listener added after start works (SMV-1899 A2-1).
+            if case .shareRequested = event, self.events?.hasListener != true {
+                bridgeLog("ShoplivePlayerDelegate", "shareRequested dropped: navigation.isCustomShareEnabled is true but no Dart listener on ShoplivePlayer.events")
+            }
             self.events?.emit(PlayerMapper.eventToWire(event))
         }
     }
 
     func player(_ player: any ShoplivePlayerControlling, didRequest request: ShoplivePlayerRequest) {
         onMain { [weak self] in
-            guard let self = self, self.isCurrent else {
+            guard let self = self, self.isLive else {
                 DetachedPlayerDelegate.respondFallback(request)
                 return
             }

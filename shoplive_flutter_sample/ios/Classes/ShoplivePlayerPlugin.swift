@@ -19,6 +19,7 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
     private var requests: EventEmitter?
     private var registry: PendingRequests<PendingRequest>?
     private var handler: PlayerMethodHandler?
+    private var campaigns: CampaignListCalls?
     // FlutterEventChannel keeps its stream handler weakly in some engine versions - keep them alive.
     private var streamHandlers: [EmitterStreamHandler] = []
 
@@ -38,10 +39,11 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
         let attach = self.attach
         let scheduler = self.scheduler
         handler = PlayerMethodHandler(registry: registry, hostScreen: KeyWindowHostScreen()) { [weak events, weak requests, weak registry] handler in
-            guard let events = events, let requests = requests, let registry = registry else { return DetachedPlayerDelegate.shared }
+            guard let events = events, let requests = requests, let registry = registry else { return nil }
             return PlayerDelegateBridge(handler: handler, events: events, requests: requests, registry: registry,
                                         attach: attach, scheduler: scheduler)
         }
+        campaigns = CampaignListCalls(scheduler: scheduler)
         self.registry = registry
         self.events = events
         self.requests = requests
@@ -62,6 +64,8 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
         requestsChannel?.setStreamHandler(nil)
         attach.next() // later SDK callbacks are stale: events dropped, requests answered with the fallback
         handler?.onEngineDetached()
+        campaigns?.cancelAll()
+        campaigns = nil
         registry?.flushAll()
         events?.clear()
         requests?.clear()
@@ -71,11 +75,24 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let deferred = call.method == "getCampaigns" // the only method answered later, by CampaignListCalls (SMV-1899 D10-e)
         let outcome = bridgedCall { () -> Any? in
-            guard let handler = handler else { throw bridgeDetachedError }
-            return try handler.handle(call.method, try Args.of(call.arguments))
+            switch call.method {
+            case "getCampaigns":
+                guard let campaigns = campaigns else { throw bridgeDetachedError }
+                try campaigns.begin(try Args.of(call.arguments), reply: result)
+                return nil
+            case "cancelGetCampaigns":
+                guard let campaigns = campaigns else { throw bridgeDetachedError }
+                return try campaigns.cancel(try Args.of(call.arguments))
+            default:
+                guard let handler = handler else { throw bridgeDetachedError }
+                return try handler.handle(call.method, try Args.of(call.arguments))
+            }
         }
         if case .failure(let f) = outcome { bridgeLog(Self.tag, "\(call.method): \(f.code)") }
+        // A started getCampaigns is replied by CampaignListCalls; only its early failures are delivered here (exactly once).
+        if deferred, case .success = outcome { return }
         outcome.deliver(result)
     }
 }

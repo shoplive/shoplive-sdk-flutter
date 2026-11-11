@@ -12,10 +12,24 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final player = ShoplivePlayer.instance;
 
+  // case: G-16 (R6-I1, SMV-1899 D10) — declared before group('core') so it runs before any initialize: without an accessKey the
+  // SDK fails with 9000 without network, and the Future ends once with SDK_ERROR carrying the ShopliveError wire.
+  testWidgets('getCampaigns before initialize ends with SDK_ERROR NOT_INITIALIZED_ACCESS_KEY', (_) async {
+    final e = await ShoplivePlayerAPI.getCampaigns().then<PlatformException?>((_) => null, onError: (Object e) => e as PlatformException);
+    expect(e?.code, 'SDK_ERROR');
+    final err = ShopliveError.tryParse(e!.details)!;
+    expect([err.code, err.rawCode], ['NOT_INITIALIZED_ACCESS_KEY', 9000]);
+  });
+
+  // case: G-6 (R6-I1) — 32-bit page/size like Android, rejected before the SDK call
+  testWidgets('getCampaigns page out of 32-bit range is INVALID_ARGUMENT', (_) async {
+    await expectLater(ShoplivePlayerAPI.getCampaigns(request: const ShopliveCampaignListRequest(page: 1 << 33)), _platformError('INVALID_ARGUMENT'));
+  });
+
   group('core', () {
     // case: N-01
     testWidgets('getSdkVersion returns the iOS SDK version', (_) async {
-      expect(await Shoplive.getSdkVersion(), '3.0.3');
+      expect(await Shoplive.getSdkVersion(), '3.0.5');
     });
 
     // case: F-04
@@ -72,6 +86,22 @@ void main() {
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));
     });
 
+    // case: R-2 (R6-I1, SMV-1899 D9) — auto (wire 'default') is accepted and applied as fill; getResizeMode returns the real value
+    testWidgets('resizeMode auto is applied as fill on iOS', (_) async {
+      await player.setResizeMode(ShopliveResizeMode.auto);
+      expect(await player.getResizeMode(), ShopliveResizeMode.fill);
+      await player.setResizeMode(ShopliveResizeMode.fit);
+      expect(await player.getResizeMode(), ShopliveResizeMode.fit);
+      await expectLater(player.setResizeMode(ShopliveResizeMode.unknown), _platformError('INVALID_ARGUMENT'));
+    });
+
+    // case: S-5 (R6-I1, SMV-1899 D11-d) — blank / whitespace key is rejected before the SDK
+    testWidgets('startPreview blank key is INVALID_ARGUMENT', (_) async {
+      await expectLater(player.startPreview(''), _platformError('INVALID_ARGUMENT'));
+      await expectLater(player.startPreview('  '), _platformError('INVALID_ARGUMENT'));
+      expect(await player.isRunning(), isFalse);
+    });
+
     // case: D-2, IM-m1 — same type keeps the other fields (Android parity); a different type rebuilds from the preset
     testWidgets('type: same value keeps fields, different value switches preset', (_) async {
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));
@@ -82,6 +112,64 @@ void main() {
       expect((await player.getConfiguration()).type, ShoplivePlayerType.preview);
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));
       expect((await player.getConfiguration()).type, ShoplivePlayerType.live);
+    });
+
+    // case: A2-4 (R-I1, SMV-1899) — isCustomShareEnabled round-trip, omitted keeps the value, key+null / non-Bool INVALID_ARGUMENT
+    testWidgets('navigation.isCustomShareEnabled round-trips and validates', (_) async {
+      await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: true)));
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue);
+      await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(shareScheme: 'app://s')));
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue);
+      const channel = MethodChannel('shoplive_player');
+      for (final bad in <Object?>[null, 'yes']) {
+        await expectLater(
+          channel.invokeMethod<void>('setConfiguration', {
+            'configuration': {
+              'navigation': {'isCustomShareEnabled': bad},
+            },
+          }),
+          _platformError('INVALID_ARGUMENT'),
+        );
+      }
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isTrue); // rejected calls change nothing
+      await player.setConfiguration(const ShoplivePlayerConfiguration(navigation: ShopliveNavigationOptions(isCustomShareEnabled: false)));
+      expect((await player.getConfiguration()).navigation!.isCustomShareEnabled, isFalse);
+    });
+
+    // case: A3-2·A3-3·A3-6 (R-I1, SMV-1899) — button isHidden round-trip, unknown nativeImageName still succeeds, wrong types INVALID_ARGUMENT
+    testWidgets('pip buttons round-trip and validate', (_) async {
+      await player.setConfiguration(const ShoplivePlayerConfiguration(
+        pip: ShoplivePipOptions(
+          closeButton: ShopliveButtonOptions(isHidden: true),
+          restoreButton: ShopliveButtonOptions(nativeImageName: 'sample_pip_restore'),
+        ),
+      ));
+      var pip = (await player.getConfiguration()).pip!;
+      expect(pip.closeButton!.isHidden, isTrue);
+      expect(pip.restoreButton!.isHidden, isFalse);
+      expect(pip.restoreButton!.nativeImageName, isNull); // write-only
+      // An image name that does not resolve (or a Flutter asset path) is not an error: log + no image.
+      for (final name in ['no_such_image', 'assets/close.png', '']) {
+        await player.setConfiguration(ShoplivePlayerConfiguration(pip: ShoplivePipOptions(closeButton: ShopliveButtonOptions(nativeImageName: name))));
+      }
+      pip = (await player.getConfiguration()).pip!;
+      expect(pip.closeButton!.isHidden, isTrue); // omitted isHidden keeps the value
+      const channel = MethodChannel('shoplive_player');
+      for (final bad in <Map<String, Object?>>[
+        {'closeButton': null},
+        {'closeButton': 'x'},
+        {'restoreButton': {'isHidden': null}},
+        {'restoreButton': {'isHidden': 'yes'}},
+        {'closeButton': {'nativeImageName': 3}},
+      ]) {
+        await expectLater(
+          channel.invokeMethod<void>('setConfiguration', {'configuration': {'pip': bad}}),
+          _platformError('INVALID_ARGUMENT'),
+        );
+      }
+      await player.setConfiguration(const ShoplivePlayerConfiguration(
+        pip: ShoplivePipOptions(closeButton: ShopliveButtonOptions(isHidden: false), restoreButton: ShopliveButtonOptions(isHidden: false)),
+      ));
     });
 
     // case: B-09, B-08, N-06

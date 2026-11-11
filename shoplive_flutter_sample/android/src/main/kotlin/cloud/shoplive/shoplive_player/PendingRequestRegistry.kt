@@ -119,13 +119,31 @@ internal class PlayerDelegateBridge(
     private val registry: PendingRequestRegistry,
 ) : ShoplivePlayerDelegate {
 
+    /** 교체된 세션의 delegate 표시(D6, SMV-1899 A4-5). 메인 스레드에서만 읽고 쓴다(retire·메인 hop 블록). */
+    private var retired = false
+
+    /** PlayerMethodHandler.retire(교체)에서만 부른다. 이후 이벤트는 버리고 요청은 DetachedDelegate와 같은 폴백 1회. */
+    fun retire() {
+        retired = true
+    }
+
+    /** 현재 엔진 세대이고 교체되지 않은 세션인지 — 메인 hop 블록 진입 시 1회 판정. */
+    private val isLive: Boolean get() = !retired && attach.isCurrent(generation)
+
     override fun onEvent(sender: ShoplivePlayerControlling, event: ShoplivePlayerEvent) = onMain {
-        if (!attach.isCurrent(generation)) return@onMain
-        Bridge.guardCallback(TAG, "onEvent") { events.emit(PlayerMapper.eventToWire(event)) }
+        if (!isLive) return@onMain
+        // D3(a'): isCustomShareEnabled=true인데 Dart가 events를 듣지 않으면 SDK 기본 시트도 뜨지 않아 공유가 무반응 → 원인을 경고로 남긴다.
+        // 이벤트는 그대로 emit(폐기는 EventEmitter). 판정은 전달 시점이라 start 뒤에 생긴 구독도 정상 전달(SMV-1899 A2-1).
+        Bridge.guardCallback(TAG, "onEvent") {
+            if (event is ShoplivePlayerEvent.ShareRequested && !events.hasListener()) {
+                Log.w(TAG, "shareRequested dropped: navigation.isCustomShareEnabled is true but no Dart listener on ShoplivePlayer.events")
+            }
+            events.emit(PlayerMapper.eventToWire(event))
+        }
     }
 
     override fun onRequest(sender: ShoplivePlayerControlling, request: ShoplivePlayerRequest) = onMain {
-        if (!attach.isCurrent(generation)) {
+        if (!isLive) {
             DetachedDelegate.onRequest(sender, request)
             return@onMain
         }

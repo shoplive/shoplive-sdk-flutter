@@ -2,17 +2,23 @@ import Foundation
 import UIKit
 import ShoplivePlayerSDK
 
-/// Dart wire map <-> Shoplive iOS player 3.0.3 types (design section 2.2-2.5). Pure functions.
+/// Dart wire map <-> Shoplive iOS player SDK types (design section 2.2-2.5). Pure functions.
 enum PlayerMapper {
     // MARK: wire tables (Dart enum.name, design section 2.4)
-    static let playerState: [String: ShoplivePlayerState] = [
-        "idle": .idle, "loading": .loading, "playing": .playing, "paused": .paused, "inAppPip": .inAppPIP, "closed": .closed,
+    /// Close reason of stateChanged(closed) (SDK 3.0.4 `.closed(reason)`), sent as `closeReason` (SMV-1899 A4).
+    static let closeReason: [String: ShopliveCloseReason] = [
+        "userAction": .userAction, "appRequest": .appRequest, "accessKeyChanged": .accessKeyChanged,
     ]
     static let campaignStatus: [String: ShopliveCampaignStatus] = ["ready": .ready, "live": .live, "ended": .ended]
     static let connectionState: [String: ShopliveConnectionState] = [
         "connecting": .connecting, "connected": .connected, "reconnecting": .reconnecting, "disconnected": .disconnected,
     ]
+    /// Output (getResizeMode): one wire name per value - wireOf scans an unordered Dictionary (BridgeCore.swift:320-322), so a
+    /// second key for .fill would make the reply nondeterministic.
     static let resizeMode: [String: ShopliveResizeMode] = ["fill": .fill, "fit": .fit]
+    /// Input (setResizeMode). "default" is Dart ShopliveResizeMode.auto = Android SDK 3.0.6 DEFAULT (window-size judgement); the
+    /// iOS SDK has no such mode, so it is applied as .fill, the iOS default (SMV-1899 D9).
+    static let resizeModeInput: [String: ShopliveResizeMode] = ["fill": .fill, "fit": .fit, "default": .fill]
     static let overlayUI: [String: ShopliveOverlayUIMode] = ["builtIn": .builtIn, "hidden": .hidden]
     static let presentationStyle: [String: ShoplivePlayerPresentationStyle] = ["fullscreen": .fullScreen, "pip": .pip]
     static let pipPosition: [String: ShoplivePipPosition] = [
@@ -23,6 +29,10 @@ enum PlayerMapper {
     static let navigationAction: [String: ShopliveNavigationAction] = ["pip": .pip, "keep": .keep, "close": .close]
     static let resultStatus: [String: ShopliveResultStatus] = ["show": .show, "hide": .hide, "keep": .keep]
     static let alertType: [String: ShopliveResultAlertType] = ["alert": .alert, "toast": .toast]
+    /// getCampaigns filters. Explicit tables, not rawValue: the SDK rawValues are the server values ("READY", ...), not the
+    /// Dart wire names (SMV-1899 D10-l).
+    static let campaignListStatus: [String: ShopliveCampaignListRequest.Status] = ["ready": .ready, "onAir": .onAir, "closed": .closed]
+    static let campaignListOrder: [String: ShopliveCampaignListRequest.Order] = ["ascending": .ascending, "descending": .descending]
     /// Contract values validated but without an iOS counterpart (D-2 type is mapped to presets, D-3 aspectRatio ignored).
     static let playerType: [String: String] = ["live": "live", "preview": "preview"]
     static let pipRatio: [String: String] = [
@@ -43,11 +53,14 @@ enum PlayerMapper {
 
     /// Merges a partial configuration over `current` (CFG-01). D-2/IM-m1: a `type` different from the current one selects
     /// the `.preview`/`.default` preset as the new base; the same type keeps the current fields (Android parity).
-    static func mergeConfiguration(_ current: ShoplivePlayerConfiguration, currentType: String,
-                                   partial: Args) throws -> (ShoplivePlayerConfiguration, String) {
+    /// `applyType: false` skips `type` - used for the running controller (SMV-1899 D12 X2: a type change there would rebase on a
+    /// preset and the 3.0.5 configuration didSet would unmute / show the overlay of a floating preview at once).
+    /// `warnUnresolvedImage: false` keeps the unresolved-image warning to one line when one call merges into two targets (D12 X10).
+    static func mergeConfiguration(_ current: ShoplivePlayerConfiguration, currentType: String, partial: Args,
+                                   applyType: Bool = true, warnUnresolvedImage: Bool = true) throws -> (ShoplivePlayerConfiguration, String) {
         var config = current
         var type = currentType
-        if let newType = try nonNullEnum(partial, "type", playerType), newType != currentType {
+        if applyType, let newType = try nonNullEnum(partial, "type", playerType), newType != currentType {
             // TODO(SDP-VERIFY): 요확인 - .preview/.default 프리셋의 실제 값(swiftinterface에 내용 없음) · 근거 DRAFT-flutter-sdk-302-ios/D-2 · 자동 통과 금지(실측)
             config = newType == "preview" ? .preview : .default
             // SDK 3.0.3 adds ShoplivePlayerConfiguration.type; set it explicitly whatever the preset holds (SMV-1749).
@@ -62,6 +75,9 @@ enum PlayerMapper {
             // SDK 3.0.3. Missing = keep the SDK value, key+null or non-Bool = INVALID_ARGUMENT (Android parity).
             // SDK default is true (measured on iOS 18.4 simulator, SMV-1749).
             if let v = try nonNullBool(pip, "isDragOutToCloseEnabled") { config.pip.isDragOutToCloseEnabled = v }
+            // SDK 3.0.4 in-App PIP buttons (SMV-1899 A3). isHidden vs image precedence is the SDK's - the bridge passes both.
+            config.pip.closeButton = try mergeButton(pip, "closeButton", config.pip.closeButton, warn: warnUnresolvedImage)
+            config.pip.restoreButton = try mergeButton(pip, "restoreButton", config.pip.restoreButton, warn: warnUnresolvedImage)
             if try nonNullEnum(pip, "aspectRatio", pipRatio) != nil {
                 bridgeLog("ShoplivePlayer", "configuration.pip.aspectRatio is not supported by the iOS SDK and is ignored")
             }
@@ -92,6 +108,8 @@ enum PlayerMapper {
         if let navigation = try partial.optArgs("navigation") {
             if let v = try nonNullEnum(navigation, "actionOnNavigation", navigationAction) { config.navigation.actionOnNavigation = v }
             if navigation.has("shareScheme") { config.navigation.shareScheme = try navigation.optString("shareScheme") }
+            // SDK 3.0.4 (default false). Missing = keep, key+null or non-Bool = INVALID_ARGUMENT (Android parity, SMV-1899 A2-4).
+            if let v = try nonNullBool(navigation, "isCustomShareEnabled") { config.navigation.isCustomShareEnabled = v }
         }
         if let overlay = try partial.optArgs("overlay") {
             if let v = try nonNullEnum(overlay, "ui", overlayUI) { config.overlay.ui = v }
@@ -105,6 +123,20 @@ enum PlayerMapper {
             // D-3: Android-only options are ignored on iOS.
         }
         return (config, type)
+    }
+
+    /// getCampaigns request (SMV-1899 D10-l). Missing = SDK default. Range correction (page < 1, size 1...20) and duplicate statuses
+    /// are the SDK's, so only the format is checked: page/size are 32-bit integers like Android Args.optInt, key+null is rejected.
+    static func toCampaignListRequest(_ a: Args?) throws -> ShopliveCampaignListRequest {
+        guard let a = a else { return ShopliveCampaignListRequest() }
+        let statuses = try (try a.optNonNullStringList("statuses") ?? []).enumerated().map { i, raw -> ShopliveCampaignListRequest.Status in
+            guard let status = campaignListStatus[raw] else {
+                throw BridgeArgumentError(key: "statuses[\(i)]", expected: "one of \(campaignListStatus.keys.sorted())", actual: "unknown String")
+            }
+            return status
+        }
+        return ShopliveCampaignListRequest(page: try nonNullInt32(a, "page"), size: try nonNullInt32(a, "size"), statuses: statuses,
+                                           order: try nonNullEnum(a, "order", campaignListOrder))
     }
 
     static func toCouponResult(couponId: String, _ a: Args) throws -> ShopliveCouponResult {
@@ -133,13 +165,17 @@ enum PlayerMapper {
                 "defaultPosition": wireOf(c.pip.defaultPosition, pipPosition),
                 "scale": Double(c.pip.scale),
                 "isDragOutToCloseEnabled": c.pip.isDragOutToCloseEnabled,
+                // isHidden only: nativeImageName is write-only (a UIImage cannot be turned back into its name - SMV-1899 D1).
+                "closeButton": ["isHidden": c.pip.closeButton.isHidden],
+                "restoreButton": ["isHidden": c.pip.restoreButton.isHidden],
                 "padding": ["left": Int(c.pip.padding.left), "top": Int(c.pip.padding.top),
                             "right": Int(c.pip.padding.right), "bottom": Int(c.pip.padding.bottom)],
             ] as [String: Any],
             "sound": ["muteOnStart": c.sound.muteOnStart, "mixWithOthers": c.sound.mixWithOthers],
             "appearance": ["indicatorColor": argb(c.appearance.indicatorColor)],
             "navigation": ["actionOnNavigation": wireOf(c.navigation.actionOnNavigation, navigationAction),
-                           "shareScheme": c.navigation.shareScheme as Any? ?? NSNull()] as [String: Any],
+                           "shareScheme": c.navigation.shareScheme as Any? ?? NSNull(),
+                           "isCustomShareEnabled": c.navigation.isCustomShareEnabled] as [String: Any],
             "overlay": ["ui": wireOf(c.overlay.ui, overlayUI)],
             "customParameters": c.customParameters,
         ]
@@ -151,10 +187,28 @@ enum PlayerMapper {
                 "status": info.status.map { wireOf($0, campaignStatus) } as Any? ?? NSNull()] as [String: Any]
     }
 
+    /// State -> wire name (Dart ShoplivePlayerState.name). SDK 3.0.4 made closed carry a reason, so a table lookup by equality
+    /// would send "unknown" for it (SMV-1899 A0-1). Used by getState and stateChanged; the reason only goes with stateChanged.
+    /// ShoplivePlayerState is non-frozen: a future state becomes "unknown" (Dart ShoplivePlayerState.unknown).
+    static func stateToWire(_ state: ShoplivePlayerState) -> String {
+        switch state {
+        case .idle: return "idle"
+        case .loading: return "loading"
+        case .playing: return "playing"
+        case .paused: return "paused"
+        case .inAppPIP: return "inAppPip"
+        case .closed: return "closed"
+        @unknown default: return wireUnknown
+        }
+    }
+
     static func eventToWire(_ event: ShoplivePlayerEvent) -> [String: Any] {
         switch event {
         case .stateChanged(let state):
-            return ["type": "stateChanged", "state": wireOf(state, playerState)]
+            var wire: [String: Any] = ["type": "stateChanged", "state": stateToWire(state)]
+            // closeReason only for closed (SMV-1899 A4): other states carry no key.
+            if case .closed(let reason) = state { wire["closeReason"] = wireOf(reason, closeReason) }
+            return wire
         case .campaignStatusChanged(let status):
             return ["type": "campaignStatusChanged", "status": wireOf(status, campaignStatus)]
         case .campaignInfoReceived(let info):
@@ -174,9 +228,22 @@ enum PlayerMapper {
         case .webCommand(let name, let payload):
             // Contract payload is a non-null map: nil -> {} (I-E-03).
             return ["type": "webCommandReceived", "name": name, "payload": ValueNormalizer.normalize(payload ?? [:])]
+        // TODO(SDP-VERIFY): 요확인 — iOS SDK의 공유 연타 접힘 규칙(1탭=1건) 실측(swiftinterface로 확인 불가). 브릿지는 1건=1건 중계(디바운스 없음) · 근거 SMV-1899
+        case .shareRequested(let info):
+            return shareInfoToWire(info)
         @unknown default:
             return ["type": wireUnknown, "rawType": "unknown"]
         }
+    }
+
+    /// All five keys always present, missing values NSNull (Android parity, SMV-1899 A1-3). URL? -> absoluteString.
+    private static func shareInfoToWire(_ i: ShopliveShareInfo) -> [String: Any] {
+        ["type": "shareRequested",
+         "url": i.url?.absoluteString as Any? ?? NSNull(),
+         "campaignKey": i.campaignKey as Any? ?? NSNull(),
+         "title": i.title as Any? ?? NSNull(),
+         "descriptionText": i.descriptionText as Any? ?? NSNull(),
+         "thumbnailUrl": i.thumbnailUrl?.absoluteString as Any? ?? NSNull()]
     }
 
     private static func playbackToWire(_ p: PlaybackEvent) -> [String: Any] {
@@ -215,6 +282,54 @@ enum PlayerMapper {
         ]
     }
 
+    /// getCampaigns response (SMV-1899 D10). Same wire as Android: times in epoch ms, missing values as NSNull keys.
+    static func campaignListToWire(_ r: ShopliveCampaignListResponse) -> [String: Any] {
+        ["campaigns": r.campaigns.map(campaignItemToWire), "hasMore": r.hasMore]
+    }
+
+    private static func campaignItemToWire(_ i: ShopliveCampaignListItem) -> [String: Any] {
+        [
+            "campaignId": i.campaignId,
+            "campaignKey": i.campaignKey,
+            "title": i.title as Any? ?? NSNull(),
+            "description": i.description as Any? ?? NSNull(),
+            "campaignUrl": i.campaignUrl,
+            "rerun": i.rerun,
+            "archiveStream": i.archiveStream,
+            "privateLive": i.privateLive,
+            "scheduledAt": epochMs(i.scheduledAt),
+            "scheduledEndAt": epochMs(i.scheduledEndAt),
+            "posterUrl": i.posterUrl as Any? ?? NSNull(),
+            "lifecycle": lifecycleToWire(i.lifecycle),
+            "metrics": i.metrics.map { m -> Any in
+                ["userCount": m.userCount as Any? ?? NSNull(), "adoreCount": m.adoreCount as Any? ?? NSNull(), "showUserCount": m.showUserCount]
+            } ?? NSNull(),
+        ]
+    }
+
+    private static func lifecycleToWire(_ l: ShopliveCampaignLifecycle) -> [String: Any] {
+        var m: [String: Any] = ["rehearsal": l.rehearsal, "startedAt": epochMs(l.startedAt), "closingAt": epochMs(l.closingAt),
+                                "endedAt": epochMs(l.endedAt)]
+        switch l.status {
+        case .reserved: m["status"] = "reserved"
+        case .ready: m["status"] = "ready"
+        case .onAir: m["status"] = "onAir"
+        case .closed: m["status"] = "closed"
+        case .unknown(let raw):
+            m["status"] = wireUnknown
+            m["unknownStatus"] = raw
+        @unknown default: m["status"] = wireUnknown // a newer SDK status without its server text
+        }
+        return m
+    }
+
+    /// Date -> epoch ms, rounded: the SDK parses server ms into a Double-based Date, so truncation could lose 1 ms.
+    /// ValueNormalizer is not used - it turns a Date into an ISO string (BridgeCore.swift:341).
+    static func epochMs(_ date: Date?) -> Any {
+        guard let date = date else { return NSNull() }
+        return Int64((date.timeIntervalSince1970 * 1000).rounded())
+    }
+
     static func navigationToWire(_ url: URL) -> [String: Any] { ["type": "navigation", "url": url.absoluteString] }
 
     static func couponToWire(requestId: String, couponId: String) -> [String: Any] {
@@ -240,6 +355,32 @@ enum PlayerMapper {
         return Int(byte(a) << 24 | byte(r) << 16 | byte(g) << 8 | byte(b)) // unsigned 32-bit ARGB
     }
 
+    private static let nativeImageName = "nativeImageName"
+
+    /// Button map: missing = keep, key+null or non-map = INVALID_ARGUMENT (padding rule). isHidden is a non-null Bool.
+    /// nativeImageName: missing = keep the image, key+null = clear (nullable field rule), non-String = INVALID_ARGUMENT.
+    private static func mergeButton(_ pip: Args, _ key: String, _ current: ShoplivePlayerConfiguration.ButtonOptions,
+                                    warn: Bool) throws -> ShoplivePlayerConfiguration.ButtonOptions {
+        guard let a = try pip.optArgs(key) else {
+            if pip.has(key) { throw BridgeArgumentError(key: key, expected: "non-null value", actual: "null") }
+            return current
+        }
+        var button = current
+        if let v = try nonNullBool(a, "isHidden") { button.isHidden = v }
+        if a.has(nativeImageName) { button.image = try a.optString(nativeImageName).flatMap { resolveImage(key, $0, warn: warn) } }
+        return button
+    }
+
+    /// App bundle Asset Catalog image. Not found or "" never fails the call (contract 3): log once, no image -> the SDK draws
+    /// the server asset or its default.
+    private static func resolveImage(_ key: String, _ name: String, warn: Bool) -> UIImage? {
+        let image = name.isEmpty ? nil : UIImage(named: name)
+        if image == nil, warn {
+            bridgeLog("ShoplivePlayer", "configuration.pip.\(key).\(nativeImageName) '\(name)' is not an image in the app bundle; using the server asset or the SDK default")
+        }
+        return image
+    }
+
     private static func nonNullBool(_ a: Args, _ key: String) throws -> Bool? {
         if a.has(key), a.isNull(key) { throw BridgeArgumentError(key: key, expected: "non-null value", actual: "null") }
         return try a.optBool(key)
@@ -250,6 +391,13 @@ enum PlayerMapper {
         return try a.optInt(key)
     }
 
+    /// 32-bit like Android Args.optInt, so both platforms reject the same values (iOS Int is 64-bit).
+    private static func nonNullInt32(_ a: Args, _ key: String) throws -> Int? {
+        guard let v = try nonNullInt(a, key) else { return nil }
+        guard v >= Int(Int32.min), v <= Int(Int32.max) else { throw BridgeArgumentError(key: key, expected: "Int range", actual: "out of range") }
+        return v
+    }
+
     private static func nonNullDouble(_ a: Args, _ key: String) throws -> Double? {
         if a.has(key), a.isNull(key) { throw BridgeArgumentError(key: key, expected: "non-null value", actual: "null") }
         return try a.optDouble(key)
@@ -257,5 +405,13 @@ enum PlayerMapper {
 
     private static func nonNullEnum<E>(_ a: Args, _ key: String, _ table: [String: E]) throws -> E? {
         try a.optWireEnum(key, table)
+    }
+}
+
+extension ShoplivePlayerState {
+    /// SDK 3.0.4 `.closed(reason)` for any reason - replaces the 3.0.3 `== .closed` comparisons (SMV-1899 A0-1).
+    var isClosed: Bool {
+        if case .closed = self { return true }
+        return false
     }
 }
