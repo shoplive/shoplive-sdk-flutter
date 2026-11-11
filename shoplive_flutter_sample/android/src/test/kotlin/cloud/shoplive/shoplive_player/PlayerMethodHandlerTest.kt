@@ -464,6 +464,19 @@ class PlayerMethodHandlerTest {
         assertEquals(PlayerMapper.configurationToWire(ShoplivePlayerConfiguration()), call("getConfiguration"))
     }
 
+    @Test // case: C-4 (R6-A7, 교차검증 K1) — 실행 중 인스턴스까지 두 번 병합해도 이름 해석(=해석 실패 경고 지점)은 이름당 1회
+    fun setConfiguration_resolvesEachImageNameOncePerCall() {
+        val asked = mutableListOf<String>()
+        val h = PlayerMethodHandler<String>(registry, portFactory = { FakePort() }, liveDelegate = { liveDelegate }, drawableId = { asked += it; null })
+        h.attachHost("A1")
+        h.handle("start", Args.of(mapOf("campaignKey" to "k")))
+        h.handle(
+            "setConfiguration",
+            Args.of(mapOf("configuration" to mapOf("pip" to mapOf("closeButton" to mapOf("nativeImageName" to "missing"), "restoreButton" to mapOf("nativeImageName" to "missing"))))),
+        )
+        assertEquals(listOf("missing"), asked)
+    }
+
     @Test // case: SMV-1749, A4-6 (R-A7) — close 후 같은 호스트에서 다시 start해도 Closed 인스턴스를 재사용하지 않는다(재사용 조건은 Idle뿐)
     fun closedInstance_sameHost_startCreatesNewPort() {
         handler.attachHost("A1")
@@ -563,7 +576,7 @@ class PlayerMethodHandlerTest {
                 "start", "play", "stop", "close", "reload", "send", "setMuted", "isMuted", "setResizeMode", "getResizeMode",
                 "setOverlayUI", "getOverlayUI", "enterPictureInPicture", "exitPictureInPicture", "isInPictureInPicture", "getState",
                 "getCurrentCampaign", "isRunning", "setConfiguration", "getConfiguration", "setRequestTimeout", "respondCoupon",
-                "respondCustomAction", "respondFallback",
+                "respondCustomAction", "respondFallback", "getCampaigns", "cancelGetCampaigns",
             ),
             PlayerContract.METHODS,
         )

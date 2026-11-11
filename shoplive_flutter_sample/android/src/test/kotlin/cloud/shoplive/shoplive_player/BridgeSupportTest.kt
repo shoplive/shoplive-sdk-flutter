@@ -71,6 +71,17 @@ class BridgeSupportTest {
         }
     }
 
+    @Test // case: G-6 (R6-A4, SMV-1899) — iOS Args.optNonNullStringList와 같은 규칙: 생략 null, 키+null·비리스트·비문자열 원소 INVALID
+    fun args_optNonNullStringList() {
+        assertEquals(listOf("a", "b"), Args.of(mapOf("l" to listOf("a", "b"))).optNonNullStringList("l"))
+        assertEquals(emptyList<String>(), Args.of(mapOf("l" to emptyList<Any>())).optNonNullStringList("l"))
+        assertNull(Args.of(emptyMap<String, Any>()).optNonNullStringList("l"))
+        assertThrows(BridgeArgumentException::class.java) { Args.of(mapOf("l" to null)).optNonNullStringList("l") }
+        assertThrows(BridgeArgumentException::class.java) { Args.of(mapOf("l" to "a")).optNonNullStringList("l") }
+        val e = assertThrows(BridgeArgumentException::class.java) { Args.of(mapOf("l" to listOf("a", 1))).optNonNullStringList("l") }
+        assertEquals("l[1]", e.key)
+    }
+
     @Test // case: B-03
     fun args_hasNullable_distinguishesMissingAndNull() {
         val a = Args.of(mapOf("x" to null))

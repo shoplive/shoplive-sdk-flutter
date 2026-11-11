@@ -3,6 +3,12 @@ package cloud.shoplive.shoplive_player
 import cloud.shoplive.core.publicsurface.ShopliveError
 import cloud.shoplive.core.publicsurface.ShopliveErrorCode
 import cloud.shoplive.player.ShopliveAnalyticsInfo
+import cloud.shoplive.player.ShopliveCampaignLifecycle
+import cloud.shoplive.player.ShopliveCampaignLifecycleStatus
+import cloud.shoplive.player.ShopliveCampaignListItem
+import cloud.shoplive.player.ShopliveCampaignListRequest
+import cloud.shoplive.player.ShopliveCampaignListResponse
+import cloud.shoplive.player.ShopliveCampaignMetrics
 import cloud.shoplive.player.ShopliveBrand
 import cloud.shoplive.player.ShopliveCampaign
 import cloud.shoplive.player.ShopliveCampaignInfo
@@ -54,6 +60,77 @@ class PlayerMapperTest {
         check(PlayerMapper.NAVIGATION_ACTION, ShopliveNavigationAction.values())
         check(PlayerMapper.RESULT_STATUS, ShopliveResultStatus.values())
         check(PlayerMapper.ALERT_TYPE, ShopliveResultAlertType.values())
+        check(PlayerMapper.CAMPAIGN_LIST_STATUS, ShopliveCampaignListRequest.Status.values()) // case: G-6 (R6-A4)
+        check(PlayerMapper.CAMPAIGN_LIST_ORDER, ShopliveCampaignListRequest.Order.values())
+    }
+
+    // ---- getCampaigns(SMV-1899 D10) ----
+
+    @Test // case: G-6 (R6-A4) — 요청: 생략은 SDK 기본, statuses·order wire 이름, 32비트 밖·키+null·미지 값 INVALID
+    fun campaignListRequest_mapping() {
+        assertEquals(ShopliveCampaignListRequest(), PlayerMapper.toCampaignListRequest(null))
+        assertEquals(ShopliveCampaignListRequest(), PlayerMapper.toCampaignListRequest(Args.of(mapOf("statuses" to emptyList<String>()))))
+        assertEquals(
+            ShopliveCampaignListRequest(
+                page = 0, size = 100,
+                statuses = listOf(ShopliveCampaignListRequest.Status.ONAIR, ShopliveCampaignListRequest.Status.READY, ShopliveCampaignListRequest.Status.ONAIR),
+                order = ShopliveCampaignListRequest.Order.ASCENDING,
+            ),
+            PlayerMapper.toCampaignListRequest(Args.of(mapOf("page" to 0, "size" to 100L, "statuses" to listOf("onAir", "ready", "onAir"), "order" to "ascending"))),
+        ) // 보정(page<1·size 범위)과 중복 제거는 SDK 몫 — 브릿지는 그대로 넘긴다
+        fun invalidKey(m: Map<String, Any?>): String =
+            assertThrows(BridgeArgumentException::class.java) { PlayerMapper.toCampaignListRequest(Args.of(m)) }.key
+        assertEquals("statuses[1]", invalidKey(mapOf("statuses" to listOf("ready", "ONAIR"))))
+        assertEquals("statuses", invalidKey(mapOf("statuses" to null)))
+        assertEquals("page", invalidKey(mapOf("page" to (1L shl 33))))
+        assertEquals("size", invalidKey(mapOf("size" to null)))
+        assertEquals("order", invalidKey(mapOf("order" to null)))
+        assertEquals("order", invalidKey(mapOf("order" to "latest")))
+    }
+
+    private fun item(status: ShopliveCampaignLifecycleStatus, metrics: ShopliveCampaignMetrics?, id: Long = 1L) = ShopliveCampaignListItem(
+        campaignId = id, campaignKey = "k$id", title = null, description = "d", campaignUrl = "https://u/$id",
+        rerun = true, archiveStream = false, privateLive = true, scheduledAt = 1_700_000_000_123L, scheduledEndAt = null, posterUrl = null,
+        lifecycle = ShopliveCampaignLifecycle(status, rehearsal = true, startedAt = null, closingAt = 5L, endedAt = null),
+        metrics = metrics,
+    )
+
+    @Test // case: G-1·G-3·G-4·G-5 (R6-A4) — 응답: 전 필드, 64비트 id, null 그대로, lifecycle 상태 4종 + 미지 값 원문
+    fun campaignListResponse_toWire() {
+        val wire = PlayerMapper.campaignListToWire(
+            ShopliveCampaignListResponse(
+                campaigns = listOf(
+                    item(ShopliveCampaignLifecycleStatus.OnAir, ShopliveCampaignMetrics(userCount = 1L shl 40, adoreCount = null, showUserCount = false), id = 1L shl 40),
+                    item(ShopliveCampaignLifecycleStatus.Unknown("PAUSED"), null),
+                ),
+                hasMore = true,
+            ),
+        )
+        assertEquals(true, wire["hasMore"])
+        val (first, second) = wire["campaigns"] as List<*>
+        assertEquals(
+            mapOf(
+                "campaignId" to (1L shl 40), "campaignKey" to "k${1L shl 40}", "title" to null, "description" to "d", "campaignUrl" to "https://u/${1L shl 40}",
+                "rerun" to true, "archiveStream" to false, "privateLive" to true, "scheduledAt" to 1_700_000_000_123L, "scheduledEndAt" to null,
+                "posterUrl" to null,
+                "lifecycle" to mapOf("status" to "onAir", "rehearsal" to true, "startedAt" to null, "closingAt" to 5L, "endedAt" to null),
+                "metrics" to mapOf("userCount" to (1L shl 40), "adoreCount" to null, "showUserCount" to false),
+            ),
+            first,
+        )
+        second as Map<*, *>
+        assertEquals(mapOf("status" to "unknown", "unknownStatus" to "PAUSED", "rehearsal" to true, "startedAt" to null, "closingAt" to 5L, "endedAt" to null), second["lifecycle"])
+        assertNull(second["metrics"])
+        assertEquals(true, second.containsKey("metrics"))
+        val known = mapOf(
+            ShopliveCampaignLifecycleStatus.Reserved to "reserved", ShopliveCampaignLifecycleStatus.Ready to "ready",
+            ShopliveCampaignLifecycleStatus.OnAir to "onAir", ShopliveCampaignLifecycleStatus.Closed to "closed",
+        )
+        for ((status, name) in known) {
+            val lifecycle = ((PlayerMapper.campaignListToWire(ShopliveCampaignListResponse(listOf(item(status, null)), false))["campaigns"] as List<*>)[0] as Map<*, *>)["lifecycle"] as Map<*, *>
+            assertEquals(name, lifecycle["status"])
+            assertEquals(false, lifecycle.containsKey("unknownStatus")) // 원문 키는 unknown일 때만
+        }
     }
 
     @Test // case: R-1 (R6-A1, SMV-1899 D9) — 3.0.6 DEFAULT ↔ wire 'default'(Dart ShopliveResizeMode.auto)

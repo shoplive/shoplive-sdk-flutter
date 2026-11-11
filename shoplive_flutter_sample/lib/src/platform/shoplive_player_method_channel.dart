@@ -32,11 +32,14 @@ abstract final class ShoplivePlayerContract {
   static const String respondCoupon = 'respondCoupon';
   static const String respondCustomAction = 'respondCustomAction';
   static const String respondFallback = 'respondFallback';
+  static const String getCampaigns = 'getCampaigns';
+  static const String cancelGetCampaigns = 'cancelGetCampaigns';
 
   static const List<String> methods = [
     start, play, stop, close, reload, send, setMuted, isMuted, setResizeMode, getResizeMode, setOverlayUI, getOverlayUI,
     enterPictureInPicture, exitPictureInPicture, isInPictureInPicture, getState, getCurrentCampaign, isRunning,
     setConfiguration, getConfiguration, setRequestTimeout, respondCoupon, respondCustomAction, respondFallback,
+    getCampaigns, cancelGetCampaigns,
   ];
 }
 

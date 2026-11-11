@@ -253,6 +253,14 @@ internal class Args private constructor(private val map: Map<*, *>) {
         return m.mapValues { (k, v) -> v as? String ?: throw BridgeArgumentException("$key.$k", "String", typeName(v)) }
     }
 
+    /** 문자열 리스트(iOS Args.optNonNullStringList와 같은 규칙). 키 부재 → null, 키+null·비리스트 → 거부, 비문자열 원소 → `key[i]`로 거부. */
+    fun optNonNullStringList(key: String): List<String>? {
+        if (!has(key)) return null
+        val v = map[key] ?: throw BridgeArgumentException(key, "List<String>", "null")
+        if (v !is List<*>) throw BridgeArgumentException(key, "List<String>", typeName(v))
+        return v.mapIndexed { i, e -> e as? String ?: throw BridgeArgumentException("$key[$i]", "String", typeName(e)) }
+    }
+
     /** wire 값(Dart camelCase) → SDK enum. 키 부재 → null, 키+null·미지값 → 거부. 거부 시 값은 싣지 않는다. */
     fun <E> optWireEnum(key: String, table: Map<String, E>): E? {
         if (!has(key)) return null

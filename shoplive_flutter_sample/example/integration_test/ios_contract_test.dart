@@ -12,6 +12,20 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   final player = ShoplivePlayer.instance;
 
+  // case: G-16 (R6-I1, SMV-1899 D10) — declared before group('core') so it runs before any initialize: without an accessKey the
+  // SDK fails with 9000 without network, and the Future ends once with SDK_ERROR carrying the ShopliveError wire.
+  testWidgets('getCampaigns before initialize ends with SDK_ERROR NOT_INITIALIZED_ACCESS_KEY', (_) async {
+    final e = await ShoplivePlayerAPI.getCampaigns().then<PlatformException?>((_) => null, onError: (Object e) => e as PlatformException);
+    expect(e?.code, 'SDK_ERROR');
+    final err = ShopliveError.tryParse(e!.details)!;
+    expect([err.code, err.rawCode], ['NOT_INITIALIZED_ACCESS_KEY', 9000]);
+  });
+
+  // case: G-6 (R6-I1) — 32-bit page/size like Android, rejected before the SDK call
+  testWidgets('getCampaigns page out of 32-bit range is INVALID_ARGUMENT', (_) async {
+    await expectLater(ShoplivePlayerAPI.getCampaigns(request: const ShopliveCampaignListRequest(page: 1 << 33)), _platformError('INVALID_ARGUMENT'));
+  });
+
   group('core', () {
     // case: N-01
     testWidgets('getSdkVersion returns the iOS SDK version', (_) async {

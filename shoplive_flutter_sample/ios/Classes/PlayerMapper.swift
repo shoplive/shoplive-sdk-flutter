@@ -29,6 +29,10 @@ enum PlayerMapper {
     static let navigationAction: [String: ShopliveNavigationAction] = ["pip": .pip, "keep": .keep, "close": .close]
     static let resultStatus: [String: ShopliveResultStatus] = ["show": .show, "hide": .hide, "keep": .keep]
     static let alertType: [String: ShopliveResultAlertType] = ["alert": .alert, "toast": .toast]
+    /// getCampaigns filters. Explicit tables, not rawValue: the SDK rawValues are the server values ("READY", ...), not the
+    /// Dart wire names (SMV-1899 D10-l).
+    static let campaignListStatus: [String: ShopliveCampaignListRequest.Status] = ["ready": .ready, "onAir": .onAir, "closed": .closed]
+    static let campaignListOrder: [String: ShopliveCampaignListRequest.Order] = ["ascending": .ascending, "descending": .descending]
     /// Contract values validated but without an iOS counterpart (D-2 type is mapped to presets, D-3 aspectRatio ignored).
     static let playerType: [String: String] = ["live": "live", "preview": "preview"]
     static let pipRatio: [String: String] = [
@@ -119,6 +123,20 @@ enum PlayerMapper {
             // D-3: Android-only options are ignored on iOS.
         }
         return (config, type)
+    }
+
+    /// getCampaigns request (SMV-1899 D10-l). Missing = SDK default. Range correction (page < 1, size 1...20) and duplicate statuses
+    /// are the SDK's, so only the format is checked: page/size are 32-bit integers like Android Args.optInt, key+null is rejected.
+    static func toCampaignListRequest(_ a: Args?) throws -> ShopliveCampaignListRequest {
+        guard let a = a else { return ShopliveCampaignListRequest() }
+        let statuses = try (try a.optNonNullStringList("statuses") ?? []).enumerated().map { i, raw -> ShopliveCampaignListRequest.Status in
+            guard let status = campaignListStatus[raw] else {
+                throw BridgeArgumentError(key: "statuses[\(i)]", expected: "one of \(campaignListStatus.keys.sorted())", actual: "unknown String")
+            }
+            return status
+        }
+        return ShopliveCampaignListRequest(page: try nonNullInt32(a, "page"), size: try nonNullInt32(a, "size"), statuses: statuses,
+                                           order: try nonNullEnum(a, "order", campaignListOrder))
     }
 
     static func toCouponResult(couponId: String, _ a: Args) throws -> ShopliveCouponResult {
@@ -264,6 +282,54 @@ enum PlayerMapper {
         ]
     }
 
+    /// getCampaigns response (SMV-1899 D10). Same wire as Android: times in epoch ms, missing values as NSNull keys.
+    static func campaignListToWire(_ r: ShopliveCampaignListResponse) -> [String: Any] {
+        ["campaigns": r.campaigns.map(campaignItemToWire), "hasMore": r.hasMore]
+    }
+
+    private static func campaignItemToWire(_ i: ShopliveCampaignListItem) -> [String: Any] {
+        [
+            "campaignId": i.campaignId,
+            "campaignKey": i.campaignKey,
+            "title": i.title as Any? ?? NSNull(),
+            "description": i.description as Any? ?? NSNull(),
+            "campaignUrl": i.campaignUrl,
+            "rerun": i.rerun,
+            "archiveStream": i.archiveStream,
+            "privateLive": i.privateLive,
+            "scheduledAt": epochMs(i.scheduledAt),
+            "scheduledEndAt": epochMs(i.scheduledEndAt),
+            "posterUrl": i.posterUrl as Any? ?? NSNull(),
+            "lifecycle": lifecycleToWire(i.lifecycle),
+            "metrics": i.metrics.map { m -> Any in
+                ["userCount": m.userCount as Any? ?? NSNull(), "adoreCount": m.adoreCount as Any? ?? NSNull(), "showUserCount": m.showUserCount]
+            } ?? NSNull(),
+        ]
+    }
+
+    private static func lifecycleToWire(_ l: ShopliveCampaignLifecycle) -> [String: Any] {
+        var m: [String: Any] = ["rehearsal": l.rehearsal, "startedAt": epochMs(l.startedAt), "closingAt": epochMs(l.closingAt),
+                                "endedAt": epochMs(l.endedAt)]
+        switch l.status {
+        case .reserved: m["status"] = "reserved"
+        case .ready: m["status"] = "ready"
+        case .onAir: m["status"] = "onAir"
+        case .closed: m["status"] = "closed"
+        case .unknown(let raw):
+            m["status"] = wireUnknown
+            m["unknownStatus"] = raw
+        @unknown default: m["status"] = wireUnknown // a newer SDK status without its server text
+        }
+        return m
+    }
+
+    /// Date -> epoch ms, rounded: the SDK parses server ms into a Double-based Date, so truncation could lose 1 ms.
+    /// ValueNormalizer is not used - it turns a Date into an ISO string (BridgeCore.swift:341).
+    static func epochMs(_ date: Date?) -> Any {
+        guard let date = date else { return NSNull() }
+        return Int64((date.timeIntervalSince1970 * 1000).rounded())
+    }
+
     static func navigationToWire(_ url: URL) -> [String: Any] { ["type": "navigation", "url": url.absoluteString] }
 
     static func couponToWire(requestId: String, couponId: String) -> [String: Any] {
@@ -323,6 +389,13 @@ enum PlayerMapper {
     private static func nonNullInt(_ a: Args, _ key: String) throws -> Int? {
         if a.has(key), a.isNull(key) { throw BridgeArgumentError(key: key, expected: "non-null value", actual: "null") }
         return try a.optInt(key)
+    }
+
+    /// 32-bit like Android Args.optInt, so both platforms reject the same values (iOS Int is 64-bit).
+    private static func nonNullInt32(_ a: Args, _ key: String) throws -> Int? {
+        guard let v = try nonNullInt(a, key) else { return nil }
+        guard v >= Int(Int32.min), v <= Int(Int32.max) else { throw BridgeArgumentError(key: key, expected: "Int range", actual: "out of range") }
+        return v
     }
 
     private static func nonNullDouble(_ a: Args, _ key: String) throws -> Double? {

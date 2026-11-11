@@ -41,7 +41,7 @@ internal class PlayerMethodHandler<H : Any>(
     private val registry: PendingRequestRegistry,
     private val portFactory: (H) -> PlayerPort,
     private val liveDelegate: () -> ShoplivePlayerDelegate,
-    /** 앱 drawable 이름 → 리소스 ID(PIP 버튼 nativeImageName, SMV-1899 A3). 플러그인이 applicationContext로 만든다. */
+    /** 앱 drawable 이름 → 리소스 ID(PIP 버튼 nativeImageName, SMV-1899 A3). 플러그인이 applicationContext로 만든다. 못 찾으면 경고 1줄 후 null. */
     private val drawableId: (String) -> Int?,
 ) {
     private val k = PlayerContract
@@ -143,14 +143,15 @@ internal class PlayerMethodHandler<H : Any>(
      * SDK가 확장 때 바꾼 값(3.0.6 ShoplivePlayerConfiguration.kt:72-74) — 그래서 보관값으로 덮지 않고 그 위에 partial만 얹는다.
      * 실행 중 인스턴스에는 type을 넣지 않는다: 떠 있는 미리보기의 프리셋이 깨진다(X2). 비실행(Idle) 인스턴스에는 넣는다:
      * portForStart가 재사용하고 partial 없는 start는 인스턴스 설정으로 시작하므로(X9·Y2) 다음 start가 최신 type을 받아야 한다.
-     * 두 병합을 모두 계산한 뒤 대입한다 — 인자 오류면 아무것도 바뀌지 않는다. 이미지 해석 실패 경고는 1줄(두 번째 병합은 끔, X10).
+     * 두 병합을 모두 계산한 뒤 대입한다 — 인자 오류면 아무것도 바뀌지 않는다. 이미지 이름은 호출당 1번만 해석한다 — 해석 실패 경고가
+     * 해석하는 쪽에서 나므로 두 번 병합해도 1줄이다(X10, 3.0.4 계약 "경고 로그 1줄").
      */
     private fun setConfiguration(partial: Args): Any? {
-        val saved = PlayerMapper.mergeConfiguration(currentConfiguration(), partial, drawableId)
+        val resolved = HashMap<String, Int?>()
+        val resolveOnce: (String) -> Int? = { name -> if (resolved.containsKey(name)) resolved[name] else drawableId(name).also { resolved[name] = it } }
+        val saved = PlayerMapper.mergeConfiguration(currentConfiguration(), partial, resolveOnce)
         val p = port
-        val instance = p?.let {
-            PlayerMapper.mergeConfiguration(it.configuration, partial, drawableId, applyType = !it.isRunning, warnUnresolvedImage = false)
-        }
+        val instance = p?.let { PlayerMapper.mergeConfiguration(it.configuration, partial, resolveOnce, applyType = !it.isRunning) }
         if (p != null && instance != null) p.configuration = instance
         savedConfiguration = saved
         return null

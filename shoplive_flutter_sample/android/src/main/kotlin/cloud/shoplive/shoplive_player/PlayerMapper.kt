@@ -1,7 +1,11 @@
 package cloud.shoplive.shoplive_player
 
-import android.util.Log
 import cloud.shoplive.player.ShopliveAnalyticsInfo
+import cloud.shoplive.player.ShopliveCampaignLifecycle
+import cloud.shoplive.player.ShopliveCampaignLifecycleStatus
+import cloud.shoplive.player.ShopliveCampaignListItem
+import cloud.shoplive.player.ShopliveCampaignListRequest
+import cloud.shoplive.player.ShopliveCampaignListResponse
 import cloud.shoplive.player.ShopliveCampaignInfo
 import cloud.shoplive.player.ShopliveCampaignStatus
 import cloud.shoplive.player.ShopliveCloseReason
@@ -55,13 +59,19 @@ internal object PlayerContract {
     const val RESPOND_COUPON = "respondCoupon"
     const val RESPOND_CUSTOM_ACTION = "respondCustomAction"
     const val RESPOND_FALLBACK = "respondFallback"
+    /** 회신을 SDK 콜백 때 보내는 유일한 메서드(SMV-1899 D10). */
+    const val GET_CAMPAIGNS = "getCampaigns"
+    const val CANCEL_GET_CAMPAIGNS = "cancelGetCampaigns"
 
     val METHODS = listOf(
         START, PLAY, STOP, CLOSE, RELOAD, SEND, SET_MUTED, IS_MUTED, SET_RESIZE_MODE, GET_RESIZE_MODE,
         SET_OVERLAY_UI, GET_OVERLAY_UI, ENTER_PIP, EXIT_PIP, IS_IN_PIP, GET_STATE, GET_CURRENT_CAMPAIGN,
         IS_RUNNING, SET_CONFIGURATION, GET_CONFIGURATION, SET_REQUEST_TIMEOUT, RESPOND_COUPON,
-        RESPOND_CUSTOM_ACTION, RESPOND_FALLBACK,
+        RESPOND_CUSTOM_ACTION, RESPOND_FALLBACK, GET_CAMPAIGNS, CANCEL_GET_CAMPAIGNS,
     )
+
+    /** getCampaigns를 앱이 취소했을 때의 PlatformException.code(Dart ShoplivePlatformErrorCode.cancelled — SMV-1899 D10-f). */
+    const val CANCELLED = "CANCELLED"
 
     // 인자 키
     const val CAMPAIGN_KEY = "campaignKey"
@@ -80,6 +90,7 @@ internal object PlayerContract {
     const val REFERRER = "referrer"
     const val KEEP_WINDOW_STATE = "keepWindowStateOnPlayExecuted"
     const val PRESENTATION_STYLE = "presentationStyle"
+    const val REQUEST = "request"
 }
 
 /** Dart wire Map ↔ Shoplive player 3.0.4 타입 (순수 함수). */
@@ -118,6 +129,14 @@ internal object PlayerMapper {
     )
     val RESULT_STATUS = mapOf("show" to ShopliveResultStatus.SHOW, "hide" to ShopliveResultStatus.HIDE, "keep" to ShopliveResultStatus.KEEP)
     val ALERT_TYPE = mapOf("alert" to ShopliveResultAlertType.ALERT, "toast" to ShopliveResultAlertType.TOAST)
+    /** getCampaigns 요청 필터 — wire 이름은 Dart enum name(SDK serverValue가 아니다 — SMV-1899 D10-l). */
+    val CAMPAIGN_LIST_STATUS = mapOf(
+        "ready" to ShopliveCampaignListRequest.Status.READY, "onAir" to ShopliveCampaignListRequest.Status.ONAIR,
+        "closed" to ShopliveCampaignListRequest.Status.CLOSED,
+    )
+    val CAMPAIGN_LIST_ORDER = mapOf(
+        "ascending" to ShopliveCampaignListRequest.Order.ASCENDING, "descending" to ShopliveCampaignListRequest.Order.DESCENDING,
+    )
 
     // ---- 입력 ----
 
@@ -140,14 +159,12 @@ internal object PlayerMapper {
      * customParameters는 맵 단위 교체. loadingAnimation·chatInputTypeface는 노출하지 않으므로 항상 현재 값 유지.
      * [drawableId]: 앱 drawable 리소스 이름 → 리소스 ID(없으면 null). Mapper가 Context를 갖지 않도록 인자로 받는다(JVM 테스트 대역 — SMV-1899 D1).
      * [applyType]: false면 `type`을 읽지 않는다 — 실행 중 인스턴스에 병합할 때(SMV-1899 D12 X2: 떠 있는 미리보기의 프리셋을 지킨다).
-     * [warnUnresolvedImage]: 한 setConfiguration이 두 대상에 병합할 때 이미지 해석 실패 경고를 1줄로 두려고 두 번째 병합에서 끈다(D12 X10).
      */
     fun mergeConfiguration(
         current: ShoplivePlayerConfiguration,
         partial: Args,
         drawableId: (String) -> Int?,
         applyType: Boolean = true,
-        warnUnresolvedImage: Boolean = true,
     ): ShoplivePlayerConfiguration =
         Bridge.constructing(K.CONFIGURATION) {
             val android = partial.optArgs("android")
@@ -173,8 +190,8 @@ internal object PlayerMapper {
                     // SDK 3.0.3 신규(기본 true). 생략 = 현재 값 유지, 키+null·비Boolean = INVALID_ARGUMENT(다른 Boolean 필드와 같은 규칙)
                     isDragOutToCloseEnabled = nonNullBool(pip, "isDragOutToCloseEnabled") ?: cp.isDragOutToCloseEnabled,
                     // SDK 3.0.4 in-App PIP 버튼(SMV-1899 A3). isHidden·이미지 우선순위는 SDK가 정한다 — 브릿지는 값만 넘긴다.
-                    closeButton = mergeButton(cp.closeButton, pip, "closeButton", drawableId, warnUnresolvedImage),
-                    restoreButton = mergeButton(cp.restoreButton, pip, "restoreButton", drawableId, warnUnresolvedImage),
+                    closeButton = mergeButton(cp.closeButton, pip, "closeButton", drawableId),
+                    restoreButton = mergeButton(cp.restoreButton, pip, "restoreButton", drawableId),
                 ),
                 sound = cs.copy(
                     muteOnStart = nonNullBool(sound, "muteOnStart") ?: cs.muteOnStart,
@@ -208,27 +225,15 @@ internal object PlayerMapper {
         pip: Args?,
         key: String,
         drawableId: (String) -> Int?,
-        warn: Boolean,
     ): ShoplivePlayerConfiguration.ButtonOptions {
         val a = pip?.optArgs(key) ?: return requireNotExplicitNull(pip, key, cur)
-        val imageResId = if (a.has(NATIVE_IMAGE_NAME)) a.optString(NATIVE_IMAGE_NAME)?.let { resolveImage(key, it, drawableId, warn) } else cur.imageResId
+        // 해석 실패('' · 없는 이름 · 0)는 실패로 던지지 않는다(§1(3)): 이미지 없음 → SDK가 서버 에셋 → 기본으로 그린다. 0 대신 null을
+        // 넘긴다(SDK도 0을 미지정으로 보지만 계약상 "없음"은 null). 경고는 해석하는 쪽([drawableId])이 1줄 남긴다(SMV-1899 D12 X10).
+        val imageResId = if (a.has(NATIVE_IMAGE_NAME)) a.optString(NATIVE_IMAGE_NAME)?.let(drawableId)?.takeIf { it != 0 } else cur.imageResId
         return cur.copy(isHidden = nonNullBool(a, "isHidden") ?: cur.isHidden, imageResId = imageResId)
     }
 
-    /**
-     * 해석 실패('' · 없는 이름 · 0)는 실패로 던지지 않는다(§1(3)): 경고 1줄 후 이미지 없음 → SDK가 서버 에셋 → 기본으로 그린다.
-     * 0 대신 null을 넘긴다(SDK도 0을 미지정으로 보지만 계약상 "없음"은 null).
-     */
-    private fun resolveImage(key: String, name: String, drawableId: (String) -> Int?, warn: Boolean): Int? {
-        val id = name.takeIf { it.isNotEmpty() }?.let(drawableId)?.takeIf { it != 0 }
-        if (id == null && warn) {
-            Log.w(TAG, "configuration.pip.$key.$NATIVE_IMAGE_NAME '$name' is not a drawable resource of the app; using the server asset or the SDK default")
-        }
-        return id
-    }
-
     private const val NATIVE_IMAGE_NAME = "nativeImageName"
-    private const val TAG = "ShoplivePlayer"
 
     private fun mergeInsets(cur: ShopliveInsets, a: Args): ShopliveInsets = ShopliveInsets(
         nonNullInt(a, "left") ?: cur.left,
@@ -259,6 +264,61 @@ internal object PlayerMapper {
     private fun nonNullInt(a: Args?, key: String): Int? = a?.optInt(key) ?: requireNotExplicitNull(a, key, null)
     private fun nonNullFloat(a: Args?, key: String): Float? = a?.optFloat(key) ?: requireNotExplicitNull(a, key, null)
     private fun <E> nonNullEnum(a: Args?, key: String, table: Map<String, E>): E? = a?.optWireEnum(key, table)
+
+    /**
+     * getCampaigns 요청(SMV-1899 D10-l). 생략 = SDK 기본. 값의 보정(page<1 → 1, size 1~20)과 중복 status 처리는 SDK 몫이라 형식만 본다:
+     * page·size는 32비트 정수(iOS와 같은 범위), statuses·order는 wire 테이블, 키+null은 INVALID_ARGUMENT.
+     */
+    fun toCampaignListRequest(a: Args?): ShopliveCampaignListRequest {
+        if (a == null) return ShopliveCampaignListRequest()
+        return Bridge.constructing(K.REQUEST) {
+            ShopliveCampaignListRequest(
+                page = nonNullInt(a, "page"),
+                size = nonNullInt(a, "size"),
+                statuses = a.optNonNullStringList("statuses").orEmpty().mapIndexed { i, raw ->
+                    CAMPAIGN_LIST_STATUS[raw] ?: throw BridgeArgumentException("statuses[$i]", "one of ${CAMPAIGN_LIST_STATUS.keys}", "unknown String")
+                },
+                order = a.optWireEnum("order", CAMPAIGN_LIST_ORDER),
+            )
+        }
+    }
+
+    /** 응답 → wire(SMV-1899 D10). 시각은 SDK 값 그대로 epoch ms(Long), 없는 값은 null 키로 싣는다(iOS와 같은 wire). */
+    fun campaignListToWire(r: ShopliveCampaignListResponse): Map<String, Any?> =
+        mapOf("campaigns" to r.campaigns.map(::campaignItemToWire), "hasMore" to r.hasMore)
+
+    private fun campaignItemToWire(i: ShopliveCampaignListItem): Map<String, Any?> = mapOf(
+        "campaignId" to i.campaignId,
+        "campaignKey" to i.campaignKey,
+        "title" to i.title,
+        "description" to i.description,
+        "campaignUrl" to i.campaignUrl,
+        "rerun" to i.rerun,
+        "archiveStream" to i.archiveStream,
+        "privateLive" to i.privateLive,
+        "scheduledAt" to i.scheduledAt,
+        "scheduledEndAt" to i.scheduledEndAt,
+        "posterUrl" to i.posterUrl,
+        "lifecycle" to lifecycleToWire(i.lifecycle),
+        "metrics" to i.metrics?.let { mapOf("userCount" to it.userCount, "adoreCount" to it.adoreCount, "showUserCount" to it.showUserCount) },
+    )
+
+    private fun lifecycleToWire(l: ShopliveCampaignLifecycle): Map<String, Any?> = lifecycleStatusToWire(l.status) +
+        mapOf("rehearsal" to l.rehearsal, "startedAt" to l.startedAt, "closingAt" to l.closingAt, "endedAt" to l.endedAt)
+
+    /**
+     * 서버 표기 상태. else를 두지 않는다 — SDK가 상태를 더하면 컴파일 오류로 드러난다(§1 (g)). 미지 서버 값은 SDK가 Unknown(원문)으로
+     * 주므로 원문을 `unknownStatus`에 싣는다(그 키는 unknown일 때만 — SMV-1899 D10-l).
+     */
+    private fun lifecycleStatusToWire(s: ShopliveCampaignLifecycleStatus): Map<String, Any?> = when (s) {
+        ShopliveCampaignLifecycleStatus.Reserved -> mapOf(STATUS to "reserved")
+        ShopliveCampaignLifecycleStatus.Ready -> mapOf(STATUS to "ready")
+        ShopliveCampaignLifecycleStatus.OnAir -> mapOf(STATUS to "onAir")
+        ShopliveCampaignLifecycleStatus.Closed -> mapOf(STATUS to "closed")
+        is ShopliveCampaignLifecycleStatus.Unknown -> mapOf(STATUS to WIRE_UNKNOWN, "unknownStatus" to s.value)
+    }
+
+    private const val STATUS = "status"
 
     // alertType 생략 = TOAST(iOS와 같은 값, SMV-1749 결정). SDK 3.0.3 생성자 기본값(ALERT)이나 null(웹 기본)을 쓰지 않는다.
     fun toCouponResult(couponId: String, a: Args): ShopliveCouponResult = Bridge.constructing(K.STATUS) {

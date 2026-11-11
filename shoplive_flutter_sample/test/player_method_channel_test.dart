@@ -29,7 +29,7 @@ void main() {
       'start', 'play', 'stop', 'close', 'reload', 'send', 'setMuted', 'isMuted', 'setResizeMode', 'getResizeMode',
       'setOverlayUI', 'getOverlayUI', 'enterPictureInPicture', 'exitPictureInPicture', 'isInPictureInPicture', 'getState',
       'getCurrentCampaign', 'isRunning', 'setConfiguration', 'getConfiguration', 'setRequestTimeout', 'respondCoupon',
-      'respondCustomAction', 'respondFallback',
+      'respondCustomAction', 'respondFallback', 'getCampaigns', 'cancelGetCampaigns',
     ]);
   });
 

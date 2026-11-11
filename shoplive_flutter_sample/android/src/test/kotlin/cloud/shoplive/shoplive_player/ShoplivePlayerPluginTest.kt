@@ -19,4 +19,14 @@ class ShoplivePlayerPluginTest {
         assertEquals(BridgeErrorCode.SDK_ERROR, result.errorCode)
         assertEquals("plugin detached", result.errorMessage)
     }
+
+    @Test // case: G-7 (R6-A5, SMV-1899) — 나중에 회신하는 getCampaigns도 붙기 전·인자 오류는 1회로 즉시 끝난다
+    fun beforeAttach_campaignCalls_completeOnce() {
+        for (method in listOf("getCampaigns", "cancelGetCampaigns")) {
+            val result = RecordingResult()
+            ShoplivePlayerPlugin().onMethodCall(MethodCall(method, mapOf("requestId" to "1")), result)
+            assertEquals(method, listOf("error"), result.calls)
+            assertEquals(BridgeErrorCode.SDK_ERROR, result.errorCode)
+        }
+    }
 }
