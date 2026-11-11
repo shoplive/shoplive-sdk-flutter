@@ -3,7 +3,7 @@
 [SMV-1723] 네이티브(Android·iOS) SDK 와 같은 손 구조다 — **버튼 1번, PR 머지 1번.** 나머지(태그·pub.dev 발행·GitHub Release)는 워크플로가 한다.
 
 ```
-Actions → Release Flutter SDK (version[, native_version]) ─▶ PR: release-flutter/<V> → main | release/v1  (+ PR build)
+Actions → Release Flutter SDK (version[, android_version, ios_version]) ─▶ PR: release-flutter/<V> → main | release/v1  (+ PR build)
 (사람) PR 머지 ─▶ Release Flutter SDK on merge: 머지 커밋에 태그 <V> ─▶ Publish Flutter SDK (ref = 태그 <V>)
                                                                       pub.dev 발행 → GitHub Release <V>
 ```
@@ -13,17 +13,18 @@ Actions → Release Flutter SDK (version[, native_version]) ─▶ PR: release-f
 | 3.x | `main` | `shoplive_core` → `shoplive_player` · `shoplive_streamer` (세 패키지 같은 버전) | Latest |
 | 1.x | `release/v1` | `shoplive_player` | Latest 아님 |
 
-태그·Release 이름은 `v` 없이 `<V>`(예: `3.0.4`). 보통 Flutter 버전 = 네이티브 SDK 버전이고, Flutter 만 고친 릴리스는
-`native_version` 으로 바탕 SDK 를 따로 준다(예: version `1.9.1` · native_version `1.9.0`, 메이저는 같아야 함).
-pubspec·태그·Release 는 `version`, Android 좌표·podspec SDK 버전·sha256·CHANGELOG 링크는 `native_version` 을 따른다.
+태그·Release 이름은 `v` 없이 `<V>`(예: `3.0.4`). 바탕 네이티브 SDK 는 플랫폼마다 따로 준다 — `android_version` · `ios_version`
+(각각 비우면 `version`, 메이저는 같아야 함). 두 플랫폼의 최신 SDK 가 다를 때(예: version `3.0.6` · android_version `3.0.6` ·
+ios_version `3.0.5`)나 Flutter 만 고친 릴리스(예: version `1.9.1` · 두 플랫폼 `1.9.0`)에 쓴다.
+pubspec·태그·Release 는 `version`, Android 좌표는 `android_version`, podspec SDK 버전·sha256 은 `ios_version`, CHANGELOG 링크는 각 플랫폼 버전을 따른다.
 
 ## 릴리스하기
 
-1. 바탕 네이티브 SDK(`native_version`, 비우면 `<V>`) 배포가 끝났는지 본다 — 버튼이 다시 확인한다(Android `sdk.shoplive.cloud/maven-repo` POM · iOS `shoplive-sdk-ios` Release `<V>` 의 zip 과 `Package.swift` checksum(3.x) 또는 `shoplive/pod-specs`(1.x) · 두 네이티브 리포의 Release `<V>` 노트).
-2. **Actions → Release Flutter SDK → Run workflow**(Use workflow from: `main`), version 에 `<V>`(필요하면 native_version).
+1. 바탕 네이티브 SDK(`android_version` · `ios_version`, 비우면 `<V>`) 배포가 끝났는지 본다 — 버튼이 다시 확인한다(Android `sdk.shoplive.cloud/maven-repo` POM 과 `shoplive-sdk-android` Release 노트 · iOS `shoplive-sdk-ios` Release 의 zip 과 `Package.swift` checksum(3.x) 또는 `shoplive/pod-specs`(1.x) 와 Release 노트).
+2. **Actions → Release Flutter SDK → Run workflow**(Use workflow from: `main`), version 에 `<V>`(플랫폼 SDK 버전이 다르면 android_version · ios_version).
 3. 열린 PR 을 본다.
    - 버전 자리(pubspec · Android `build.gradle` · iOS podspec 버전과 sha256 · 테스트 고정값 · README 설치 예시)가 바뀌었는지. 본문 끝의 "남은 옛 버전 문자열" 은 대부분 이력 설명이다 — "현재 버전" 을 말하는 곳만 고친다.
-   - CHANGELOG(각 패키지, pub.dev 에 나감): 영어 고정 문구 + 네이티브 `native_version` Release 링크(Android·iOS)만. GitHub Release 노트도 이것을 그대로 쓴다. 직전 태그 이후 커밋 제목은 PR 본문에만 있다 — 고객에게 알릴 변경이 있으면 이 PR 에서 CHANGELOG 에 영어로 더한다.
+   - CHANGELOG(각 패키지, pub.dev 에 나감): 영어 고정 문구 + 네이티브 Release 링크(Android `android_version` · iOS `ios_version`)만. GitHub Release 노트도 이것을 그대로 쓴다. 직전 태그 이후 커밋 제목은 PR 본문에만 있다 — 고객에게 알릴 변경이 있으면 이 PR 에서 CHANGELOG 에 영어로 더한다.
    - 3.x 는 PR build(Dart · Android APK · iOS 시뮬레이터)가 그 브랜치로 돈다 — 통과를 보고 머지. 1.x 는 PR build 가 없다 — example 빌드를 손으로 확인.
 4. 머지한다. 이후는 자동이다 — Actions 의 Release Flutter SDK on merge → Publish Flutter SDK 가 끝나면 pub.dev 와 Release `<V>` 를 확인.
 
@@ -70,7 +71,7 @@ git push origin release/v1
 | 파일 | 역할 |
 |---|---|
 | `.github/workflows/release-flutter-sdk.yml` · `scripts/release-flutter-prepare.sh` | 버튼 — 검사 · 버전 올리기 PR · PR build 호출 |
-| `scripts/release-flutter-bump.sh` | 버전 자리 표(Flutter 자리 · 네이티브 자리) · podspec sha256 · CHANGELOG (로컬: `scripts/release-flutter-bump.sh --to <V> [--native <SDK>] [--ios-checksums f]`) |
+| `scripts/release-flutter-bump.sh` | 버전 자리 표(Flutter 자리 · 네이티브 자리) · podspec sha256 · CHANGELOG (로컬: `scripts/release-flutter-bump.sh --to <V> [--android <SDK>] [--ios <SDK>] [--ios-checksums f]`) |
 | `.github/workflows/release-flutter-on-merge.yml` · `scripts/release-flutter-on-merge.sh` | 머지 → 태그 → 발행 호출 |
 | `.github/workflows/publish-flutter-sdk.yml` · `scripts/release-flutter-publish.sh` | pub.dev 발행(OIDC) · GitHub Release |
 | `scripts/release-flutter-lib.sh` | 라인 표(major → 기준 브랜치·패키지) · 원격 조회 |

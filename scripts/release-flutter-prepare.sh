@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # [SMV-1723] 버튼(Release Flutter SDK) — <V> 로 버전을 올리는 PR 을 연다. 태그도 발행도 하지 않는다(그건 PR 머지 뒤).
 #
-#   scripts/release-flutter-prepare.sh <V> [<native V>]   (GITHUB_REPOSITORY · GH_TOKEN · origin 이 있는 main 클론에서)
+#   scripts/release-flutter-prepare.sh <V> [<android V>] [<ios V>]   (GITHUB_REPOSITORY · GH_TOKEN · origin 이 있는 main 클론에서)
 #
-# <V> = Flutter 패키지 버전(pubspec · 태그 · Release). <native V> = 네이티브 SDK 버전(공개 확인 · Android 좌표 · podspec SDK
-# 버전·sha256 · CHANGELOG 링크), 비우면 <V>. Flutter 만 고친 릴리스(예: Flutter 1.9.1 ← SDK 1.9.0)에 쓴다. 메이저는 같아야 한다.
+# <V> = Flutter 패키지 버전(pubspec · 태그 · Release).
+# <android V> = Android SDK 버전(공개 확인 · build.gradle 좌표 · CHANGELOG Android 링크), 비우면 <V>.
+# <ios V>     = iOS SDK 버전(공개 확인 · podspec SDK 버전·sha256 · CHANGELOG iOS 링크), 비우면 <V>.
+# 두 플랫폼의 최신 SDK 버전이 다를 때(예: Android 3.0.6 · iOS 3.0.5)나 Flutter 만 고친 릴리스(예: Flutter 1.9.1 ← SDK 1.9.0)에 쓴다.
+# 메이저는 셋 다 같아야 한다.
 #
 # 순서 — 읽기만 하는 검사를 모두 통과한 뒤에 쓴다(브랜치·PR).
 #   1. 이미 나간 버전인가: 태그 <V> · pub.dev 의 <V>(pub.dev 는 같은 버전을 다시 올릴 수 없다)
 #   2. 같은 버전의 PR 이 열려 있으면 새로 만들지 않고 PR 빌드만 다시 부른다
 #   3. 기준 트리: 3.x = main, 1.x = release/v1(없으면 마지막 1.x 태그에서 만든다)
 #   4. 기준 트리의 현재 버전 < <V>
-#   5. 네이티브 <native V> 가 공개됐는가(Android POM · iOS Release/Package.swift 또는 pod-specs · 네이티브 Release 노트)
+#   5. Android <android V> · iOS <ios V> 가 공개됐는가(Android POM · iOS Release/Package.swift 또는 pod-specs · 네이티브 Release 노트)
 #   6. (1.x) release/v1 의 배포 자동화가 main 과 같은가 — 다르면 사람이 맞춘다(GITHUB_TOKEN 은 워크플로 파일을 쓸 수 없다)
 #   7. 버전 올리기(release-flutter-bump.sh) → 커밋 → release-flutter/<V> push → PR → PR 빌드(workflow_dispatch)
 # 원격 조회가 실패하면 "없음" 으로 읽지 않고 멈춘다.
@@ -22,13 +25,15 @@ SRC=$(cd "$(dirname "$0")/.." && pwd)
 cd "$SRC"
 
 VERSION=${1:-}
-NATIVE=${2:-}
-NATIVE=${NATIVE:-$VERSION}
+ANDROID=${2:-}; ANDROID=${ANDROID:-$VERSION}
+IOS=${3:-}; IOS=${IOS:-$VERSION}
 is_semver "$VERSION" || die "버전 형식이 올바르지 않습니다: '${VERSION}' — 접두사 없는 x.y.z (예: 3.0.4 · 1.9.1)."
-is_semver "$NATIVE" || die "native_version 형식이 올바르지 않습니다: '${NATIVE}' — 접두사 없는 x.y.z, 비우면 version 과 같습니다."
+is_semver "$ANDROID" || die "android_version 형식이 올바르지 않습니다: '${ANDROID}' — 접두사 없는 x.y.z, 비우면 version 과 같습니다."
+is_semver "$IOS" || die "ios_version 형식이 올바르지 않습니다: '${IOS}' — 접두사 없는 x.y.z, 비우면 version 과 같습니다."
 MAJOR=${VERSION%%.*}
 BASE=$(line_base "$MAJOR") || die "${VERSION}: 이 버튼은 3.x(main) · 1.x(release/v1) 만 냅니다."
-[[ "${NATIVE%%.*}" == "$MAJOR" ]] || die "native_version ${NATIVE} 의 메이저가 Flutter ${VERSION} 와 다릅니다 — 같은 라인의 네이티브 SDK 여야 합니다."
+[[ "${ANDROID%%.*}" == "$MAJOR" ]] || die "android_version ${ANDROID} 의 메이저가 Flutter ${VERSION} 와 다릅니다 — 같은 라인의 네이티브 SDK 여야 합니다."
+[[ "${IOS%%.*}" == "$MAJOR" ]] || die "ios_version ${IOS} 의 메이저가 Flutter ${VERSION} 와 다릅니다 — 같은 라인의 네이티브 SDK 여야 합니다."
 REPO=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY 가 필요합니다}
 # 배포 자동화의 정본은 main 이다. 다른 브랜치에서 누르면 그 브랜치의 스크립트로 PR 을 만들게 된다.
 if [[ -n "${GITHUB_REF:-}" && "$GITHUB_REF" != "refs/heads/main" ]]; then
@@ -131,12 +136,16 @@ semver_gt "$VERSION" "$OLD" || die "${VERSION} 은 ${BASE} 의 현재 버전 ${O
 PREV=$(line_tag_max "$MAJOR" "$VERSION")
 [[ -n "$PREV" ]] || die "${VERSION} 보다 낮은 ${MAJOR}.x 태그가 없어 CHANGELOG 범위를 정할 수 없습니다."
 git merge-base --is-ancestor "${PREV}^{commit}" "$BASE_SHA" || die "직전 태그 ${PREV} 가 ${BASE} 에 들어 있지 않습니다 — CHANGELOG 범위를 정할 수 없습니다."
-NFROM=$(tree_native_version "$MAJOR" "$WT") || die "${BASE} 의 네이티브 SDK 버전을 읽지 못했습니다."
-is_semver "$NFROM" || die "${BASE} 의 네이티브 SDK 버전을 읽지 못했습니다: '${NFROM}'"
-# [SMV-1723] 네이티브 SDK 를 조용히 내리지 않는다 — native_version 이 지금 트리의 네이티브 버전보다 낮으면 멈춘다(같으면 그대로).
-[[ "$NATIVE" == "$NFROM" ]] || semver_gt "$NATIVE" "$NFROM" \
-  || die "native_version ${NATIVE} 이 ${BASE} 의 네이티브 SDK 버전 ${NFROM} 보다 낮습니다 — 네이티브를 내리는 릴리스는 자동화하지 않습니다."
-log "Flutter ${OLD} → ${VERSION} · 네이티브 ${NFROM} → ${NATIVE} · 커밋 범위 ${PREV}..${BASE}"
+AFROM=$(tree_android_version "$MAJOR" "$WT") || die "${BASE} 의 Android SDK 버전을 읽지 못했습니다."
+is_semver "$AFROM" || die "${BASE} 의 Android SDK 버전을 읽지 못했습니다: '${AFROM}'"
+IFROM=$(tree_ios_version "$MAJOR" "$WT") || die "${BASE} 의 iOS SDK 버전을 읽지 못했습니다."
+is_semver "$IFROM" || die "${BASE} 의 iOS SDK 버전을 읽지 못했습니다: '${IFROM}'"
+# [SMV-1723] 네이티브 SDK 를 조용히 내리지 않는다 — 플랫폼마다 지금 트리의 버전보다 낮으면 멈춘다(같으면 그대로).
+[[ "$ANDROID" == "$AFROM" ]] || semver_gt "$ANDROID" "$AFROM" \
+  || die "android_version ${ANDROID} 이 ${BASE} 의 Android SDK 버전 ${AFROM} 보다 낮습니다 — 네이티브를 내리는 릴리스는 자동화하지 않습니다."
+[[ "$IOS" == "$IFROM" ]] || semver_gt "$IOS" "$IFROM" \
+  || die "ios_version ${IOS} 이 ${BASE} 의 iOS SDK 버전 ${IFROM} 보다 낮습니다 — 네이티브를 내리는 릴리스는 자동화하지 않습니다."
+log "Flutter ${OLD} → ${VERSION} · Android ${AFROM} → ${ANDROID} · iOS ${IFROM} → ${IOS} · 커밋 범위 ${PREV}..${BASE}"
 # 직전 태그 이후 각 패키지 폴더를 바꾼 커밋 제목 — PR 본문에만 둔다(CHANGELOG 는 영어 고정 문구 + 네이티브 링크).
 COMMITS_MD=""
 for entry in $PACKAGES; do
@@ -149,7 +158,7 @@ for entry in $PACKAGES; do
 done
 
 # ---------------------------------------------------------------------------
-# 5. 네이티브 <native V> 공개 확인
+# 5. Android <android V> · iOS <ios V> 공개 확인
 # ---------------------------------------------------------------------------
 MISSING=""
 miss() { MISSING="${MISSING}"$'\n'"  - $*"; }
@@ -160,18 +169,18 @@ probe() {  # probe <설명> <url> → 404 면 MISSING 에 넣는다
 }
 # Android: build.gradle 이 받는 cloud.shoplive 좌표(3.x 는 트리의 네이티브 버전 문자열, 1.x 는 $shoplive_sdk_version)
 android_artifacts() {
-  GRADLE_OLD=$(re_ver "$NFROM") perl -ne '
+  GRADLE_OLD=$(re_ver "$AFROM") perl -ne '
     print "$1\n" if /implementation\("cloud\.shoplive:([a-z0-9-]+):$ENV{GRADLE_OLD}"\)/;
     print "$1\n" if /implementation "cloud\.shoplive:([a-z0-9-]+):\$shoplive_sdk_version"/;' "$1"
 }
-NATIVE_LINKS="[Android ${NATIVE}](https://github.com/${ANDROID_REPO}/releases/tag/${NATIVE}) · [iOS ${NATIVE}](https://github.com/${IOS_REPO}/releases/tag/${NATIVE})"
-probe "Android Release 노트 ${NATIVE}" "${GH_API}/repos/${ANDROID_REPO}/releases/tags/${NATIVE}"
+NATIVE_LINKS="[Android ${ANDROID}](https://github.com/${ANDROID_REPO}/releases/tag/${ANDROID}) · [iOS ${IOS}](https://github.com/${IOS_REPO}/releases/tag/${IOS})"
+probe "Android Release 노트 ${ANDROID}" "${GH_API}/repos/${ANDROID_REPO}/releases/tags/${ANDROID}"
 for entry in $PACKAGES; do
   dir=${entry%%:*}
   arts=$(android_artifacts "${WT}/${dir}/android/build.gradle")
   [[ -n "$arts" ]] || die "${dir}/android/build.gradle 에서 cloud.shoplive 좌표를 읽지 못했습니다 — 파일 모양이 바뀌었습니다."
   for a in $arts; do
-    probe "Android ${a}:${NATIVE}" "${MAVEN_REPO}/cloud/shoplive/${a}/${NATIVE}/${a}-${NATIVE}.pom"
+    probe "Android ${a}:${ANDROID}" "${MAVEN_REPO}/cloud/shoplive/${a}/${ANDROID}/${a}-${ANDROID}.pom"
   done
 done
 SUMS=""
@@ -184,18 +193,18 @@ if [[ "$MAJOR" == 3 ]]; then
     [[ -n "$n" ]] || die "${dir}/ios/${name}.podspec 에서 XCFramework 목록을 읽지 못했습니다."
     NAMES="${NAMES} ${n}"
   done
-  code=$(http_get "${GH_API}/repos/${IOS_REPO}/releases/tags/${NATIVE}" "${WORK}/ios-release.json")
+  code=$(http_get "${GH_API}/repos/${IOS_REPO}/releases/tags/${IOS}" "${WORK}/ios-release.json")
   if [[ "$code" == 404 ]]; then
-    miss "iOS Release ${NATIVE} — https://github.com/${IOS_REPO}/releases/tag/${NATIVE}"
+    miss "iOS Release ${IOS} — https://github.com/${IOS_REPO}/releases/tag/${IOS}"
   else
-    assets=$(jq -r '.assets[].name' "${WORK}/ios-release.json") || die "iOS Release ${NATIVE} 응답을 읽지 못했습니다."
+    assets=$(jq -r '.assets[].name' "${WORK}/ios-release.json") || die "iOS Release ${IOS} 응답을 읽지 못했습니다."
     for n in $NAMES; do
-      grep -qxF "${n}.xcframework.zip" <<< "$assets" || miss "iOS Release ${NATIVE} 의 ${n}.xcframework.zip"
+      grep -qxF "${n}.xcframework.zip" <<< "$assets" || miss "iOS Release ${IOS} 의 ${n}.xcframework.zip"
     done
   fi
-  code=$(http_get "${GH_API}/repos/${IOS_REPO}/contents/Package.swift?ref=${NATIVE}" "${WORK}/Package.swift" "application/vnd.github.raw")
+  code=$(http_get "${GH_API}/repos/${IOS_REPO}/contents/Package.swift?ref=${IOS}" "${WORK}/Package.swift" "application/vnd.github.raw")
   if [[ "$code" == 404 ]]; then
-    miss "iOS ${IOS_REPO}@${NATIVE} 의 Package.swift"
+    miss "iOS ${IOS_REPO}@${IOS} 의 Package.swift"
   else
     SUMS="${WORK}/ios-checksums.txt"
     # let <이름> = "<64hex>" 상수와 .binaryTarget(name:, checksum:) 를 묶는다(checksum 이 상수 이름이든 문자열이든).
@@ -212,25 +221,25 @@ if [[ "$MAJOR" == 3 ]]; then
         print "$n $sum\n" if defined $sum;
       }' < "${WORK}/Package.swift" > "$SUMS"
     sv=$(sed -n 's/^#sdkVersion //p' "$SUMS")
-    if [[ -n "$sv" && "$sv" != "$NATIVE" ]]; then
-      die "${IOS_REPO}@${NATIVE} 의 Package.swift sdkVersion 이 ${sv} 입니다 — 태그와 내용이 어긋납니다. iOS 배포를 확인하세요."
+    if [[ -n "$sv" && "$sv" != "$IOS" ]]; then
+      die "${IOS_REPO}@${IOS} 의 Package.swift sdkVersion 이 ${sv} 입니다 — 태그와 내용이 어긋납니다. iOS 배포를 확인하세요."
     fi
     for n in $NAMES; do
       awk -v n="$n" '$1 == n && $2 ~ /^[0-9a-f]+$/ && length($2) == 64 { f = 1 } END { exit !f }' "$SUMS" \
-        || miss "iOS Package.swift@${NATIVE} 의 ${n} checksum"
+        || miss "iOS Package.swift@${IOS} 의 ${n} checksum"
     done
   fi
 else
   # iOS 1.x: shoplive/pod-specs 의 podspec(앱의 pod install 이 이 spec 리포에서 받는다) + iOS Release 노트
-  probe "iOS Release 노트 ${NATIVE}" "${GH_API}/repos/${IOS_REPO}/releases/tags/${NATIVE}"
+  probe "iOS Release 노트 ${IOS}" "${GH_API}/repos/${IOS_REPO}/releases/tags/${IOS}"
   for p in $LINE1_IOS_PODS; do
-    probe "iOS pod ${p} ${NATIVE}" "${GH_API}/repos/${PODSPECS_REPO}/contents/Specs/${p}/${NATIVE}/${p}.podspec"
+    probe "iOS pod ${p} ${IOS}" "${GH_API}/repos/${PODSPECS_REPO}/contents/Specs/${p}/${IOS}/${p}.podspec"
   done
 fi
 if [[ -n "$MISSING" ]]; then
-  die "네이티브 ${NATIVE} 이 아직 공개되지 않았습니다(네이티브 배포가 끝난 뒤 다시 누르세요):${MISSING}"
+  die "네이티브(Android ${ANDROID} · iOS ${IOS})가 아직 공개되지 않았습니다(네이티브 배포가 끝난 뒤 다시 누르세요):${MISSING}"
 fi
-log "네이티브 ${NATIVE} 공개 확인 — ${NATIVE_LINKS}"
+log "네이티브 공개 확인 — ${NATIVE_LINKS}"
 
 # ---------------------------------------------------------------------------
 # 6. (1.x) 기준 브랜치 만들기 · 배포 자동화 확인
@@ -257,15 +266,15 @@ BUMP_MD="${WORK}/bump.md"
 (
   cd "$WT"
   if [[ -n "$SUMS" ]]; then
-    bash "${SRC}/scripts/release-flutter-bump.sh" --to "$VERSION" --native "$NATIVE" --ios-checksums "$SUMS"
+    bash "${SRC}/scripts/release-flutter-bump.sh" --to "$VERSION" --android "$ANDROID" --ios "$IOS" --ios-checksums "$SUMS"
   else
-    bash "${SRC}/scripts/release-flutter-bump.sh" --to "$VERSION" --native "$NATIVE"
+    bash "${SRC}/scripts/release-flutter-bump.sh" --to "$VERSION" --android "$ANDROID" --ios "$IOS"
   fi
 ) > "$BUMP_MD" || die "버전 올리기에 실패했습니다(위 오류)."
 git -C "$WT" add -u
 git -C "$WT" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" commit -q \
   -m "Release Flutter SDK ${VERSION}" \
-  -m "Flutter ${OLD} → ${VERSION} · 네이티브 SDK ${NFROM} → ${NATIVE} — Release Flutter SDK 버튼이 만든 커밋." \
+  -m "Flutter ${OLD} → ${VERSION} · Android SDK ${AFROM} → ${ANDROID} · iOS SDK ${IFROM} → ${IOS} — Release Flutter SDK 버튼이 만든 커밋." \
   || die "커밋하지 못했습니다."
 git -C "$WT" push -q origin "HEAD:refs/heads/${HEAD_BRANCH}" || die "${HEAD_BRANCH} 를 push 하지 못했습니다 — 다시 누르세요."
 
@@ -277,11 +286,11 @@ BODY="${WORK}/pr-body.md"
 # shellcheck disable=SC2016  # 아래 printf 의 백틱은 마크다운이다(셸 확장 아님).
 {
   printf 'Shoplive Flutter SDK **%s** — `%s` 기준, Release Flutter SDK 버튼이 연 PR 입니다.\n\n' "$VERSION" "$BASE"
-  printf -- '- 네이티브 SDK %s (트리 %s): %s (Android POM · iOS ' "$NATIVE" "$NFROM" "$NATIVE_LINKS"
+  printf -- '- Android SDK %s (트리 %s) · iOS SDK %s (트리 %s): %s (Android POM · iOS ' "$ANDROID" "$AFROM" "$IOS" "$IFROM" "$NATIVE_LINKS"
   if [[ "$MAJOR" == 3 ]]; then printf 'Release zip · Package.swift checksum'; else printf 'pod-specs'; fi
   printf ' 확인함)\n'
   printf -- '- 패키지: %s\n' "$(for e in $PACKAGES; do printf '`%s` ' "${e#*:}"; done)"
-  printf -- '- CHANGELOG(각 패키지, pub.dev 에 나감): 영어 고정 문구 + 네이티브 %s Release 링크. GitHub Release 노트도 이것을 그대로 씁니다.\n' "$NATIVE"
+  printf -- '- CHANGELOG(각 패키지, pub.dev 에 나감): 영어 고정 문구 + 네이티브 Release 링크(Android %s · iOS %s). GitHub Release 노트도 이것을 그대로 씁니다.\n' "$ANDROID" "$IOS"
   printf -- '- PR 빌드: %s\n\n' "$CI_NOTE"
   printf '**머지하면** 머지 커밋에 태그 `%s` 가 붙고, Publish Flutter SDK 가 pub.dev 발행(' "$VERSION"
   if [[ "$MAJOR" == 3 ]]; then printf 'shoplive_core → shoplive_player · shoplive_streamer'; else printf 'shoplive_player'; fi

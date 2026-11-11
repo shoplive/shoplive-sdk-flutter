@@ -41,16 +41,31 @@ line_core() {
 }
 # 라인의 대표 pubspec — 기준 브랜치의 "현재 버전" 을 읽는 곳.
 LINE_PRIMARY_DIR="shoplive_flutter_sample"
-# 트리가 고정한 네이티브 SDK 버전(Flutter 버전과 다를 수 있다 — 버튼 입력 native_version).
-#   3.x: podspec 의 shoplive_ios_sdk_version (Android 좌표 버전과 같아야 한다 — bump 가 같은 값으로 센다)
-#   1.x: android/build.gradle 의 def shoplive_sdk_version
-tree_native_version() {  # tree_native_version <major> [<리포 루트>]
+# 트리가 고정한 네이티브 SDK 버전 — Android 와 iOS 는 따로 읽는다(버튼 입력 android_version · ios_version, Flutter 버전과 다를 수 있다).
+#   3.x Android: android/build.gradle 의 implementation("cloud.shoplive:<artifact>:<V>") (bump 가 세 패키지 모두 같은 값인지 센다)
+#   3.x iOS:     podspec 의 shoplive_ios_sdk_version (bump 가 세 podspec 모두 같은 값인지 센다)
+#   1.x Android: android/build.gradle 의 def shoplive_sdk_version
+#   1.x iOS:     podspec 의 s.dependency 'ShopLive', '<V>'
+tree_android_version() {  # tree_android_version <major> [<리포 루트>]
   local root=${2:-.}
   case "$1" in
-    3) sed -n "s/^shoplive_ios_sdk_version = '\([^']*\)'.*/\1/p" "${root}/${LINE_PRIMARY_DIR}/ios/shoplive_player.podspec" | head -n 1 ;;
+    3) sed -n 's/.*implementation("cloud\.shoplive:[a-z0-9-]*:\([^"]*\)").*/\1/p' "${root}/${LINE_PRIMARY_DIR}/android/build.gradle" | head -n 1 ;;
     1) sed -n 's/^def shoplive_sdk_version = "\([^"]*\)".*/\1/p' "${root}/${LINE_PRIMARY_DIR}/android/build.gradle" | head -n 1 ;;
     *) return 1 ;;
   esac
+}
+tree_ios_version() {  # tree_ios_version <major> [<리포 루트>]
+  local root=${2:-.}
+  case "$1" in
+    3) sed -n "s/^shoplive_ios_sdk_version = '\([^']*\)'.*/\1/p" "${root}/${LINE_PRIMARY_DIR}/ios/shoplive_player.podspec" | head -n 1 ;;
+    1) sed -n "s/^[[:space:]]*s\.dependency 'ShopLive', '\([^']*\)'.*/\1/p" "${root}/${LINE_PRIMARY_DIR}/ios/shoplive_player.podspec" | head -n 1 ;;
+    *) return 1 ;;
+  esac
+}
+# CHANGELOG · PR 본문의 바탕 SDK 문구 — 두 버전이 같으면 한 번만 쓴다.
+native_phrase() {  # native_phrase <android V> <ios V>
+  if [[ "$1" == "$2" ]]; then printf 'Shoplive SDK %s (Android and iOS)' "$1"
+  else printf 'Shoplive Android SDK %s and iOS SDK %s' "$1" "$2"; fi
 }
 # 1.x iOS 는 shoplive/pod-specs 의 pod 두 개를 V 로 고정한다(podspec 의 s.dependency).
 LINE1_IOS_PODS="ShopLive ShopliveSDKCommon"
