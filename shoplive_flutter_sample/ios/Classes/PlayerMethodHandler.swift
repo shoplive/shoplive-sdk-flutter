@@ -88,7 +88,7 @@ final class PlayerMethodHandler {
             c.play(campaignKey: key, options: options)
         case "stop": try running().stop()
         case "close": controller?.close() // no instance -> idempotent no-op
-        // TODO(SDP-VERIFY): 요확인 — iOS reload가 closed(appRequest)를 내면 브릿지가 플레이어를 닫음(3.0.2부터), 실측 후 후속 티켓 · 근거 SMV-1899
+        // TODO(SDP-VERIFY): 요확인 — iOS 풀스크린 reload는 closed(appRequest) 뒤 같은 controller로 다시 재생(화면에 있어 playerDidClose가 놓지 않음 — 시뮬레이터 통합 테스트 확인), 실기기 확인 · 근거 SMV-1899
         case "reload": try running().reload()
         case "send":
             let command = try args.requireString("command")
@@ -172,10 +172,10 @@ final class PlayerMethodHandler {
         }
         // Check the host before anything is closed: a start without a host screen must not end the running session.
         guard hostScreen.topViewController() != nil else { throw noHostScreen() }
-        // SMV-1749: every start opens a new controller carrying this call's effective configuration. SDK 3.0.4 accepts a new
-        // configuration at any time but applies it from the next start/play/reload (SMV-1899 A0-4); the new controller per start is
-        // kept because it isolates the previous session's events and requests (retire), so there is still no IOS-M1
-        // "switch campaign in the same controller" path.
+        // SMV-1749: every start opens a new controller carrying this call's effective configuration. The SDK accepts a new
+        // configuration at any time (3.0.5 applies navigation.shareScheme, overlay.ui and sound.muteOnStart at once and the rest
+        // from the next start/play/reload - SMV-1899 D12); the new controller per start is kept because it isolates the previous
+        // session's events and requests (retire), so there is still no IOS-M1 "switch campaign in the same controller" path.
         var configuration = effective
         if let mode = savedResizeMode { configuration.appearance.resizeMode = mode }
         if let ui = savedOverlayUI { configuration.overlay.ui = ui }
@@ -206,7 +206,7 @@ final class PlayerMethodHandler {
             // 5: other key -> retire it and present a new preview below (the window comes back at the default position).
         }
         // 5-6: new preview controller.
-        // TODO(SDP-VERIFY): 요확인 — iOS SDK 3.0.5가 accessKey 없이 .preview 시작 시 창을 띄우는지·error 이벤트 1회인지 실측 · 근거 SMV-1899
+        // TODO(SDP-VERIFY): 요확인 — accessKey 없이 .preview 시작 시 창이 떴다가 closed(userAction)로 끝나고 error 이벤트가 없음(시뮬레이터 관찰, README 한계로 문서화), 실기기 재확인 · 근거 SMV-1899
         let next = BridgedPlayerViewController(campaignKey: campaignKey, options: .preview, configuration: .preview, isPreviewInstance: true)
         try presentNewSession(next) {}
         return nil
@@ -232,7 +232,7 @@ final class PlayerMethodHandler {
             // only after the presentation started, so a failed start leaves the running session alone (R4-01).
             // SMV-1899 A0-7 (D6): mark the previous session's bridge retired before presenting, so a closed the SDK may send
             // to it when the new playback starts (Android closes other sessions; iOS unverified) never reaches Dart.
-            // TODO(SDP-VERIFY): 요확인 — iOS SDK 3.0.4가 새 재생(present) 때 다른 controller 세션을 닫는지 실측, HostScreen.swift:40-41 present 거부 경로(top.present 후 presentingViewController == nil)에서 새 VC가 로드되는지 확인 · 근거 SMV-1899
+            // TODO(SDP-VERIFY): 요확인 — iOS SDK(3.0.5)가 새 재생(present) 때 다른 controller 세션을 닫는지 실측, HostScreen.swift:40-41 present 거부 경로(top.present 후 presentingViewController == nil)에서 새 VC가 로드되는지 확인 · 근거 SMV-1899
             let previousBridge = liveDelegate // `previous` is `controller` here (guard above)
             previousBridge?.isRetired = true
             guard present(next) else {
@@ -280,10 +280,18 @@ final class PlayerMethodHandler {
         return c
     }
 
-    /// stateChanged(.closed) from the SDK: release the controller, dismissing it if it is still on screen.
-    func playerDidClose(_ player: any ShoplivePlayerControlling) {
-        guard let c = controller, c === player as AnyObject else { return }
-        if c.presentingViewController != nil, !c.isBeingDismissed { c.dismiss(animated: true) }
+    /// stateChanged(.closed) of the current session, matched by its bridge (each controller gets its own): the SDK reports the
+    /// event with its ShoplivePlayerView as the sender, not the controller (3.0.5 PlayerDelegateAdapter.swift:241, the controller
+    /// hands its delegate to the view - ShoplivePlayerViewController.swift:420-422; the same since 3.0.2), so a sender check never
+    /// matched an SDK closed (SMV-1899 code cross-check M2).
+    /// - Not on screen (in-app PIP / OS PIP closed, the SDK already dismissing it, the synthetic closed of a failed deferred
+    ///   presentation) -> release it now; nothing else would.
+    /// - Still on screen (stop, the stop inside reload in fullscreen) -> keep it. The SDK leaves a stopped screen to the app, and
+    ///   reload plays again in the same controller right after this closed; dismissing it here would end the reloaded session.
+    ///   It is released when it goes away (close() -> SDK dismiss -> controllerDidDismiss) or is replaced (retire).
+    func playerDidClose(reportedBy bridge: PlayerDelegateBridge) {
+        guard let c = controller, bridge === liveDelegate else { return }
+        guard c.presentingViewController == nil || c.isBeingDismissed else { return }
         release(c)
         controller = nil
     }

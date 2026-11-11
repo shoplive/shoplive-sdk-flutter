@@ -76,7 +76,8 @@ final class PlayerDelegateBridge: ShoplivePlayerDelegate {
     func player(_ player: any ShoplivePlayerControlling, didReceive event: ShoplivePlayerEvent) {
         onMain { [weak self] in
             guard let self = self, self.isLive else { return }
-            if case .stateChanged(.closed) = event { self.handler?.playerDidClose(player) }
+            // The SDK sends its ShoplivePlayerView as `player`, not the controller, so the handler matches this bridge (SMV-1899 M2).
+            if case .stateChanged(.closed) = event { self.handler?.playerDidClose(reportedBy: self) }
             // D3(a'): isCustomShareEnabled=true but Dart does not listen -> the SDK shows no sheet either, so log the cause.
             // The event is still emitted (EventEmitter drops it); judged at delivery, so a listener added after start works (SMV-1899 A2-1).
             if case .shareRequested = event, self.events?.hasListener != true {
