@@ -1,7 +1,7 @@
 import Foundation
 import ShopliveStreamerSDK
 
-/// Shoplive iOS streamer 3.0.4 -> wire (design section 2.5/2.6). Pure functions.
+/// Shoplive iOS streamer SDK types -> wire (design section 2.5/2.6). Pure functions.
 enum StreamerMapper {
     static let broadcastState: [String: ShopliveBroadcastState] = [
         "idle": .idle, "preview": .preview, "connecting": .connecting, "live": .live, "reconnecting": .reconnecting, "ended": .ended,

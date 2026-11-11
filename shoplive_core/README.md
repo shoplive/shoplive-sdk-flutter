@@ -1,6 +1,6 @@
 # shoplive_core
 
-Shared Shoplive API for Flutter, built on Shoplive Android SDK **3.0.4** (`cloud.shoplive:shoplive-core`): initialization, user, and conversion events.
+Shared Shoplive API for Flutter, built on Shoplive Android SDK **3.0.6** (`cloud.shoplive:shoplive-core`) and iOS SDK **3.0.5** (`ShopliveCore`): initialization, user, and conversion events.
 It is re-exported by `shoplive_player` and `shoplive_streamer`. Add it directly only if you use neither.
 
 ## Requirements
@@ -24,7 +24,7 @@ dependencies:
 
 Shoplive Android SDK 3.x is served from `https://sdk.shoplive.cloud/maven-repo`.
 
-**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.4 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
+**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.6 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
 
 ### (a) Default: automatic
 
@@ -77,9 +77,9 @@ If your build resolves dependencies from `settings.gradle(.kts)` `dependencyReso
 ## iOS setup
 
 - **Minimum iOS 15.** Set `platform :ios, '15.0'` in `ios/Podfile`. Flutter's template uses a lower value, and `pod install` fails with "higher minimum deployment target" until you change it.
-- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.4 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.4`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
+- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.5 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
   - Network: the first install needs access to `github.com` and its download host. `curl` honours `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`.
-  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.4/<Name>.xcframework.zip`.
+  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.5/<Name>.xcframework.zip`.
   - Offline / CI: set `SHOPLIVE_IOS_SDK_DIR` to a folder that contains the five release zips (`ShopliveCore`, `ShoplivePlayerSDK`, `ShopliveStreamerSDK`, `ShopLiveWebRTCHelperSDK`, `WebRTC` `.xcframework.zip`). To avoid downloading on every CI run, cache the pub cache (key it by SDK version).
   - The plugin folder must be writable, because the frameworks have to live inside it. With a read-only pub cache, point `PUB_CACHE` at a writable folder and run `flutter pub get` again.
 - If you run `pod install` yourself, use a UTF-8 locale (`export LANG=en_US.UTF-8`); CocoaPods fails otherwise.
@@ -105,6 +105,7 @@ await Shoplive.logout();
 
 - Required strings (`accessKey`, profile `id`, `jwt`, stream token) must not be blank.
 - The bridge does not track initialization state. Calls made before `initialize` behave however the SDK does.
+- `setUser` and `logout` while a player is showing (fullscreen or PIP) reload only the player's web overlay with the new identity; the video and the window stay (Android SDK 3.0.6, iOS SDK 3.0.5). Calling `reload()` afterwards is not needed. iOS: `ShopliveUser.token` and `ShopliveUser.profile` replace each other (setting one clears the other).
 - Calling `initialize` with a different access key closes viewer players started with the previous key (SDK 3.0.4; `shoplive_player` reports `closed` with `closeReason: accessKeyChanged`). Android: if the user logged in with `ShopliveUser.token`, call `setUser` again after the new `initialize`.
 - `package:shoplive_core/shoplive_core_bridge.dart` is for internal use by the Shoplive packages only. It is not a supported API.
 

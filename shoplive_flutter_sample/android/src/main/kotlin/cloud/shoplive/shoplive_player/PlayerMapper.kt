@@ -94,7 +94,7 @@ internal object PlayerContract {
     const val REQUEST = "request"
 }
 
-/** Dart wire Map ↔ Shoplive player 3.0.4 타입 (순수 함수). */
+/** Dart wire Map ↔ Shoplive player SDK 타입 (순수 함수). */
 internal object PlayerMapper {
     private val K = PlayerContract
 

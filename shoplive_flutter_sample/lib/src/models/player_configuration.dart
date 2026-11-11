@@ -78,7 +78,11 @@ class ShoplivePipOptions {
     this.restoreButton,
   });
 
+  /// 앱 사용 중 요청한 PIP(PIP 버튼·[ShoplivePlayer.enterPictureInPicture]·Android 뒤로가기 PIP)를 허용할지. null이면 현재 값 유지.
+  /// Android SDK 3.0.5부터 [isOSPipEnabled]와 따로 판정한다(하나가 다른 하나를 끄지 않음). Android 풀스크린·임베드 플레이어의 PIP는 OS PIP 창이다.
   final bool? isInAppPipEnabled;
+
+  /// 사용자가 앱을 떠날 때(홈 이탈) PIP로 이어 볼지. null이면 현재 값 유지. 앱 안 PIP 중 백그라운드로 가면 이 값이 false일 때 세션이 끝난다.
   final bool? isOSPipEnabled;
   final ShoplivePipPosition? defaultPosition;
   final double? scale;
@@ -228,7 +232,7 @@ class ShopliveNavigationOptions {
 
   /// 공유를 앱이 처리할지(SDK 3.0.4+, Android·iOS — SMV-1899). true면 공유 탭 때 SDK 기본 시트 대신
   /// [ShoplivePlayerShareRequested] 이벤트가 온다(events를 반드시 구독). null이면 현재 값 유지(SDK 기본값 false).
-  /// 재생 중 바꾸면 다음 start·play·reload부터 적용된다.
+  /// 재생 중 바꾸면 Android는 바로, iOS는 다음 start·play·reload부터 적용된다(SDK 반영 시점 — README Configuration).
   final bool? isCustomShareEnabled;
 
   @internal

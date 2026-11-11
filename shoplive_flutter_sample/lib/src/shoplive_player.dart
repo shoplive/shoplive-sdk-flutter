@@ -52,7 +52,8 @@ class ShoplivePlayer {
   ///   preview 프리셋으로 같은 판단을 흉내 내며 다른 키면 창을 새로 띄운다(위치 초기화, loading → inAppPip를 다시 받음).
   /// - 호출 시점에 알 수 있는 오류는 이 Future로 온다: 빈·공백 키 `INVALID_ARGUMENT`, 호스트 화면 없음 `NO_HOST_SCREEN`, Android에서
   ///   SDK가 미리보기를 시작하지 않음(미초기화·진입 거부 — 원인은 구분하지 않는다) `SDK_ERROR`. 떠 있는 미리보기를 다시 시작하다 거부되거나
-  ///   시작 뒤 생긴 오류는 [events]의 error로 온다.
+  ///   시작 뒤 생긴 오류는 [events]의 error로 온다. [Shoplive.initialize] 뒤에 부른다 — iOS는 initialize 전 호출을 오류로 알리지 않을 수 있다
+  ///   (창이 떴다가 closed(userAction)로 끝나고 error 없음 — iOS SDK 3.0.5 동작, README Known limitations).
   /// - 미리보기는 SDK 프리셋만 쓴다 — [setConfiguration]·[setResizeMode]·[setOverlayUI]로 보관한 값은 다음 [start]에 쓰인다.
   Future<void> startPreview(String campaignKey) => _invokeVoid(_C.startPreview, {'campaignKey': campaignKey});
 

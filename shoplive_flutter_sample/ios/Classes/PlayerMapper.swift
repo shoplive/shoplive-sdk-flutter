@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 import ShoplivePlayerSDK
 
-/// Dart wire map <-> Shoplive iOS player 3.0.4 types (design section 2.2-2.5). Pure functions.
+/// Dart wire map <-> Shoplive iOS player SDK types (design section 2.2-2.5). Pure functions.
 enum PlayerMapper {
     // MARK: wire tables (Dart enum.name, design section 2.4)
     /// Close reason of stateChanged(closed) (SDK 3.0.4 `.closed(reason)`), sent as `closeReason` (SMV-1899 A4).

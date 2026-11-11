@@ -1,6 +1,6 @@
 # Shoplive SDK for Flutter
 
-Flutter plugins and sample app for Shoplive SDK **3.0.4** (Android and iOS).
+Flutter plugins and sample app for Shoplive Android SDK **3.0.6** and iOS SDK **3.0.5**.
 
 - Integration guide: https://developer.shoplive.cloud/mobile
 - To use Shoplive, contact ask@shoplive.cloud.
@@ -38,7 +38,7 @@ dependencies:
 Then do the platform setup:
 
 - **Android:** The plugins add the Shoplive Maven repository (`https://sdk.shoplive.cloud/maven-repo`) for you. If your project declares the repository itself, follow "Android: Maven repository setup" in the package README.
-- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.4 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
+- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.5 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
 
 ## Quick start
 
@@ -57,12 +57,15 @@ For configuration, events, coupon and custom-action requests, PIP, error codes a
 
 ## Upgrading from 3.0.3
 
-Change the three package versions to 3.0.4 together. Most 3.0.3 code compiles unchanged. Two cases need an edit:
+Change the three package versions to 3.0.4 together. Most 3.0.3 code compiles unchanged. Three cases need an edit:
 
 - A `switch` over `ShoplivePlayerEvent` without a `default` case must handle the new `ShoplivePlayerShareRequested`.
+- A `switch` over `ShopliveResizeMode` without a `default` case must handle the new `auto`.
 - Classes that `implements` a plugin class (test doubles) must implement the new members.
 
-New in 3.0.4: custom share handling (`navigation.isCustomShareEnabled`), in-app PIP button options (`pip.closeButton` / `restoreButton`) and the close reason (`ShoplivePlayerStateChanged.closeReason`). Native SDK 3.0.4 behavior changes (for example, a new access key closes players started with the old key) are listed in each package's CHANGELOG.
+`ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: ...)` still compiles (deprecated); use `backPressEntersPip`.
+
+New in 3.0.4: custom share handling (`navigation.isCustomShareEnabled`), in-app PIP button options (`pip.closeButton` / `restoreButton`), the close reason (`ShoplivePlayerStateChanged.closeReason`), the campaign list (`ShoplivePlayerAPI.getCampaigns`), a one-call preview (`ShoplivePlayer.startPreview`), and the Android-only `android.backPressEntersPip` and `ShopliveResizeMode.auto`. The 3.0.4 packages are built on the native Android SDK 3.0.6 and iOS SDK 3.0.5; their behavior changes (for example, the Android back button now closes the player by default, and a new access key closes players started with the old key) are listed in each package's CHANGELOG.
 
 ## Migrating from 1.x
 

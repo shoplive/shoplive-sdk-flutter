@@ -180,6 +180,8 @@ class ShoplivePlaybackEvent extends ShoplivePlayerEvent {
   final String? message;
 }
 
+/// SDK 오류. [ShopliveError.code]는 불투명 문자열로 다룬다(새 코드가 추가될 수 있음).
+/// 예: Android에서 앱 PIP 권한이 꺼진 기기의 풀스크린 PIP 요청은 `PIP_DISABLED_BY_USER`(rawCode 9511)로 오고 화면은 바뀌지 않는다(SDK 3.0.6).
 class ShoplivePlayerErrorEvent extends ShoplivePlayerEvent {
   const ShoplivePlayerErrorEvent(this.error);
   final ShopliveError error;

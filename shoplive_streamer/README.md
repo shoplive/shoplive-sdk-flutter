@@ -1,6 +1,6 @@
 # shoplive_streamer
 
-Broadcast (live streaming) screen for Flutter, built on Shoplive Android SDK **3.0.4** (`cloud.shoplive:shoplive-streamer-sdk`). Re-exports `shoplive_core`.
+Broadcast (live streaming) screen for Flutter, built on Shoplive Android SDK **3.0.6** (`cloud.shoplive:shoplive-streamer-sdk`) and iOS SDK **3.0.5** (`ShopliveStreamerSDK`). Re-exports `shoplive_core`.
 
 ## Requirements
 
@@ -23,7 +23,7 @@ dependencies:
 
 Shoplive Android SDK 3.x is served from `https://sdk.shoplive.cloud/maven-repo`.
 
-**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.4 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
+**Why `cloud.shoplive` must come only from the Shoplive repository:** Shoplive Android SDK 3.0.6 is not published to Maven Central, so Gradle must find it in the Shoplive repository. The plugins pin the `cloud.shoplive` group to that repository with `exclusiveContent`, so an artifact with the same coordinates in another repository is never mixed in. (Up to 3.0.2, Maven Central hosted a conflicting `cloud.shoplive:shoplive-media3:1.10.1.2`; from 3.0.3 the player SDK depends on `androidx.media3` directly and no longer uses `shoplive-media3`.)
 
 ### (a) Default: automatic
 
@@ -84,9 +84,9 @@ If your build resolves dependencies from `settings.gradle(.kts)` `dependencyReso
   <key>NSMicrophoneUsageDescription</key>
   <string>Used to broadcast live audio.</string>
   ```
-- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.4 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.4`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
+- **The Shoplive iOS SDK is downloaded during `pod install`.** The plugins fetch the SDK 3.0.5 XCFrameworks from the GitHub release `https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5`. Every zip is checked against its sha256; if a checksum does not match, `pod install` stops and nothing unverified is linked. The frameworks are unpacked into the plugin's `ios/Frameworks/` folder and reused by later installs, so only the first install downloads. Anything that evaluates the podspec downloads too: `pod install`, `flutter build ios` / `flutter run` (which run `pod install`) and `pod spec lint`.
   - Network: the first install needs access to `github.com` and its download host. `curl` honours `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY`.
-  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.4/<Name>.xcframework.zip`.
+  - Mirror: set `SHOPLIVE_IOS_SDK_BASE_URL` to a server that serves `<base>/3.0.5/<Name>.xcframework.zip`.
   - Offline / CI: set `SHOPLIVE_IOS_SDK_DIR` to a folder that contains the five release zips (`ShopliveCore`, `ShoplivePlayerSDK`, `ShopliveStreamerSDK`, `ShopLiveWebRTCHelperSDK`, `WebRTC` `.xcframework.zip`). To avoid downloading on every CI run, cache the pub cache (key it by SDK version).
   - The plugin folder must be writable, because the frameworks have to live inside it. With a read-only pub cache, point `PUB_CACHE` at a writable folder and run `flutter pub get` again.
 - If you run `pod install` yourself, use a UTF-8 locale (`export LANG=en_US.UTF-8`); CocoaPods fails otherwise.
@@ -118,7 +118,7 @@ final state = await streamer.getState();  // last session state, `idle` if none
 - Each `start` creates a new broadcast session. Events from the previous session stop being delivered.
 - A session in `ended` is kept, because the SDK may restart the same session, and `getState()` reports its real state. A session is released when it is `idle` while the screen is detached, when the next `start` is called, or when the engine is detached. After release, `getState()` keeps the last state.
 - Android: `start` without an access key (before `Shoplive.initialize`, or a blank key) reports the error event code `NOT_INITIALIZED_ACCESS_KEY` (SDK 3.0.4; `UNEXPECTED_ERROR` up to 3.0.3).
-- Not exposed in 3.0.4: appearance options (resource IDs) and the headless streamer API (requires an embedded preview view).
+- Not exposed by this plugin: appearance options (resource IDs) and the headless streamer API (requires an embedded preview view).
 
 ## Errors
 
