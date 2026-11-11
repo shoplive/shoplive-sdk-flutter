@@ -86,6 +86,8 @@ New in 3.0.4: custom share handling (`navigation.isCustomShareEnabled`), in-app 
 
 For local development, `pubspec_overrides.yaml` resolves `shoplive_core` from the sibling folder. Publish `shoplive_core` first, then `shoplive_player` and `shoplive_streamer`.
 
+Releases are automated (GitHub Actions → **Release Flutter SDK**). Maintainers: see [RELEASING.md](RELEASING.md).
+
 ## Links
 
 - Integration guide: https://developer.shoplive.cloud/mobile

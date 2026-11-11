@@ -1,0 +1,136 @@
+# Publish Flutter SDK — [SMV-1723] 태그 <V> 의 패키지를 pub.dev 에 발행하고 GitHub Release <V> 를 만든다.
+#
+# 태그 ref 에서만 돈다 — release-flutter-on-merge.yml 이 `gh workflow run --ref <V>` 로 부르고, 사람이 다시 돌릴 때는
+# Actions → Publish Flutter SDK → 'Use workflow from' 에서 태그 <V> 를 고른다. 다시 돌려도 된다: pub.dev 에 이미 있는 패키지는
+# 건너뛰고 Release 가 있으면 만들지 않는다 — 중간에 실패하면 같은 태그로 다시 실행하는 것이 복구다.
+#
+# pub.dev 인증은 공식 문서(https://dart.dev/tools/pub/automated-publishing)의 커스텀 워크플로 방식이다: job 에 id-token: write,
+# dart-lang/setup-dart 가 GitHub OIDC 토큰(audience https://pub.dev)을 PUB_TOKEN 으로 등록, 그다음 `pub publish --force`.
+# pub.dev 는 그 토큰의 event(workflow_dispatch 허용)·refType(tag)·ref(refs/tags/{{version}})·repository 를 본다(pub-dev backend.dart).
+# 재사용 워크플로(dart-lang/setup-dart/.github/workflows/publish.yml)를 쓰지 않는 이유:
+#   · 그 워크플로는 발행 전에 `dart pub publish --dry-run` 을 하고, 경고가 있으면 dry-run 은 65 로 끝난다. shoplive_player ·
+#     shoplive_streamer 는 shoplive_core 를 같은 버전으로 고정해 경고가 항상 나므로(pr-build.yml 참고) 그 단계에서 멈춘다.
+#   · 패키지 1개 단위라 3.x 의 순서(core 발행 → pub.dev 에 보임 → player·streamer)와 이미 있는 패키지 건너뛰기를 넣을 자리가 없다.
+# 패키지마다 job 을 나눈다 — OIDC 토큰은 setup-dart 스텝에서 만들어 수명이 짧으므로 Flutter 설치 뒤 발행 직전에 만든다(core 를 기다린 뒤).
+# 발행 job 의 액션은 커밋 SHA 로 고정하고 캐시를 쓰지 않는다(id-token 이 있는 job).
+name: Publish Flutter SDK
+
+on:
+  # TODO(SDP-VERIFY): 요확인 — pub.dev 가 GITHUB_TOKEN 이 부른 workflow_dispatch(태그 ref)의 OIDC 토큰을 받는지(backend.dart 조건으로는 통과) 첫 실발행에서 확인 · 근거 SMV-1723
+  workflow_dispatch:
+
+concurrency:
+  group: publish-flutter-sdk-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  # pr-build.yml 과 같은 Flutter — 발행 검증(pub publish 의 패키지 검사)을 CI 와 같은 도구로 한다.
+  FLUTTER_VERSION: "3.22.1"
+
+jobs:
+  plan:
+    name: plan (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      line: ${{ steps.plan.outputs.line }}
+      core: ${{ steps.plan.outputs.core }}
+      core_dir: ${{ steps.plan.outputs.core_dir }}
+      dependents: ${{ steps.plan.outputs.dependents }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0   # 태그 커밋이 기준 브랜치에 들어 있는지 본다
+      - name: Check the tag and decide what to publish
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release-flutter-publish.sh plan
+
+  # 3.x: shoplive_core 가 먼저다(player·streamer 가 같은 버전으로 의존).
+  # TODO(SDP-VERIFY): 요확인 — setup-dart 가 만든 OIDC 토큰의 수명 안에 flutter 설치·발행이 끝나는지(job 을 패키지마다 나눠 완화) 첫 실발행 로그로 확인 · 근거 SMV-1723
+  core:
+    name: publish ${{ needs.plan.outputs.core_dir }}
+    needs: plan
+    if: needs.plan.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write   # pub.dev OIDC
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: false
+      # [SMV-1723] OIDC 토큰은 Flutter 설치 뒤, 발행 바로 앞에서 만든다(토큰 수명이 짧다). flutter 는 자기 Dart 를 쓴다.
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1 — OIDC 토큰 → PUB_TOKEN
+      - name: Publish
+        env:
+          PKG_DIR: ${{ needs.plan.outputs.core_dir }}
+        run: bash scripts/release-flutter-publish.sh publish "$PKG_DIR"
+
+  # 3.x: shoplive_player · shoplive_streamer (core 가 pub.dev 에 보인 뒤). 1.x: shoplive_player.
+  # core 가 건너뛰어졌으면(이미 발행됨) 바로 시작한다. 한쪽이 실패해도 다른 쪽은 계속한다(fail-fast: false).
+  dependents:
+    name: publish ${{ matrix.package.name }}
+    needs: [plan, core]
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      (needs.core.result == 'success' || needs.core.result == 'skipped') &&
+      needs.plan.outputs.dependents != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write   # pub.dev OIDC
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.plan.outputs.dependents) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # OIDC 토큰을 만들기 전에 기다린다(토큰 수명이 짧다). 상한: 10초 × 30회.
+      - name: Wait until the line's core version is on pub.dev
+        run: bash scripts/release-flutter-publish.sh wait
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: false
+      # [SMV-1723] OIDC 토큰은 Flutter 설치 뒤, 발행 바로 앞에서 만든다(토큰 수명이 짧다). flutter 는 자기 Dart 를 쓴다.
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1 — OIDC 토큰 → PUB_TOKEN
+      - name: Publish
+        env:
+          PKG_DIR: ${{ matrix.package.dir }}
+        run: bash scripts/release-flutter-publish.sh publish "$PKG_DIR"
+
+  release:
+    name: GitHub Release
+    needs: [plan, core, dependents]
+    if: >-
+      !cancelled() && needs.plan.result == 'success' &&
+      (needs.core.result == 'success' || needs.core.result == 'skipped') &&
+      (needs.dependents.result == 'success' || needs.dependents.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # Release 생성
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Create the GitHub Release (notes from each CHANGELOG)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/release-flutter-publish.sh release
