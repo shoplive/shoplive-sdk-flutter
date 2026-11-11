@@ -150,7 +150,7 @@ When the current session closes, `ShoplivePlayerStateChanged.state` is `closed` 
 
 | `closeReason` | When |
 |---|---|
-| `userAction` | The viewer closed it (close button, dragging the in-app PIP window off the screen, system PIP close, back — on Android unless `android.backPressEntersPip` is on) |
+| `userAction` | The viewer closed it (close button, dragging the in-app PIP window off the screen, system PIP close, back — on Android unless `android.backPressEntersPip` and `pip.isInAppPipEnabled` are both `true` and PIP is available on the device) |
 | `appRequest` | Your app or the SDK closed it (`stop`, `close`, the stop inside `reload`, replacement by another broadcast, SDK internal stop). Also the `closed` the plugin sends when a replacing `start` fails |
 | `accessKeyChanged` | `Shoplive.initialize` was called with a different access key; the player started with the old key closed. Start it again if needed (Android: `ShopliveUser.token` users call `setUser` again) |
 | `unknown` | A reason this plugin version does not know |
@@ -232,13 +232,14 @@ await player.startPreview('CAMPAIGN_KEY');
 ```
 
 - If a viewing session is showing (a player opened with `start`, or a preview the viewer expanded), nothing happens. If a preview with the same key is showing, it is kept (a stopped preview, or one without a window, starts again). Another key switches the preview to that campaign. `play(key)` in fullscreen turns a preview into a viewing session.
-- Errors known when you call it end the `Future`: a blank key `INVALID_ARGUMENT`, no host screen `NO_HOST_SCREEN`, and on Android `SDK_ERROR` when the SDK did not start a preview (not initialized, or the window could not open; the SDK does not say which). A refused restart of a showing preview (Android) and errors after the start arrive as `error` events. Call it after `Shoplive.initialize`: on iOS an earlier call may not report an error at all (see Known limitations).
+- Errors known when you call it end the `Future`: a blank key `INVALID_ARGUMENT`, no host screen `NO_HOST_SCREEN`, and on Android `SDK_ERROR` when the SDK did not start a preview (not initialized, or the window could not open; the SDK does not say which). When the Android SDK refuses to restart the preview it holds (another key, or the same key when that preview has stopped or has no window), and for errors after the start, the error arrives as an `error` event. Call it after `Shoplive.initialize`: on iOS an earlier call may not report an error at all (see Known limitations).
 - The preview uses the SDK preview presets only. Values saved with `setConfiguration`, `setResizeMode` and `setOverlayUI` stay for the next `start`. A `setConfiguration` while the preview runs is merged on top of the preview's own settings, and its `type` is not changed.
 - Android sends one `stateChanged` with the preview's current state right after the call, because the SDK reports the first states before the plugin can listen. iOS reports them as they happen.
 - Android uses the SDK `ShoplivePlayer.startPreview` rules as they are. iOS SDK 3.0.5 has no such call, so the plugin emulates it with the SDK preview presets. The differences:
   - Another key closes the showing preview and opens a new one: the window comes back at its default position and you get `loading` → `inAppPip` again (no `closed` for the previous preview). Android keeps the window.
   - After `stop()` the iOS player is no longer running, so the next `startPreview` opens a new preview (a stopped player still on screen is closed first). Android ignores the call while the stopped window is still on screen.
   - iOS looks only at the player this plugin opened. Android also counts players opened by native code or another Flutter engine.
+  - A `play(key, playOptions: ShoplivePlayOptions(presentationStyle: ShoplivePresentationStyle.pip))` on a preview keeps it a preview on iOS. On Android it becomes a viewing session when the player's `sound.muteOnStart` is `false` (the preview presets keep it `true`).
   - After the viewer expanded a preview, a later `play(key, playOptions: ShoplivePlayOptions(presentationStyle: ShoplivePresentationStyle.pip))` stays a viewing session on iOS (the next `startPreview` is ignored). On Android that `play` makes it a preview again.
   - A `play` with the same key and `keepWindowStateOnPlayExecuted: true` keeps the current form on iOS even in fullscreen. Android keeps it only while the preview is floating; in fullscreen it opens the in-app PIP the `presentationStyle` asks for.
 
@@ -247,6 +248,9 @@ await player.startPreview('CAMPAIGN_KEY');
 `ShoplivePlayerAPI.getCampaigns` returns the campaigns of the access key set with `Shoplive.initialize` (Android and iOS).
 
 ```dart
+import 'dart:async'; // TimeoutException
+import 'package:flutter/services.dart'; // PlatformException
+
 final token = ShopliveCancelToken();
 try {
   final page = await ShoplivePlayerAPI.getCampaigns(
@@ -259,6 +263,8 @@ try {
   for (final c in page.campaigns) {
     // c.campaignKey, c.title, c.scheduledAt (UTC), c.lifecycle.status, c.metrics
   }
+} on TimeoutException {
+  // no answer within 15 seconds; the native request was cancelled above
 } on PlatformException catch (e) {
   if (e.code == ShoplivePlatformErrorCode.cancelled) return;
   final error = ShopliveError.tryParse(e.details); // SDK_ERROR: tell causes apart by error?.rawCode
@@ -354,7 +360,7 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 
 ## Known limitations
 
-- **`reload()` sends `closed` before it plays again.** On both platforms you get `stateChanged(closed)` with `appRequest`, then `loading` and `playing`, and the session goes on. Do not treat that `closed` as the end of the session. (iOS: checked on the simulator, device check pending.)
+- **`reload()` sends `closed` before it plays again.** You get `stateChanged(closed)` with `appRequest`, then `loading` and `playing`, and the session goes on. Do not treat that `closed` as the end of the session. Exception: on iOS, `reload()` in in-app PIP does not stop first, so no `closed` arrives; do not wait for one. (iOS: checked on the simulator, device check pending.)
 - **`getCampaigns` has no plugin wait limit.** The native HTTP limits apply (Android 30 s per call, iOS 10 s without data), but if the native side never answers, the `Future` may not complete. Use `Future.timeout` and `ShopliveCancelToken.cancel()` (see "Campaign list").
 - **iOS: `startPreview` before `Shoplive.initialize` is not reported as an error.** Without an access key the preview may open, then end with `closed` (`userAction`), and no `error` event arrives (iOS SDK 3.0.5 behavior, seen on the simulator). Call `startPreview` after `initialize` has completed.
 - **Android: `startPreview` may end with `SDK_ERROR` although the SDK only ignored the call.** If a viewing window that the SDK cannot link to a player is showing, the SDK returns a player that did not start, and the plugin cannot tell this from a failed start.

@@ -1,3 +1,7 @@
+### Documentation
+* Correction to the 3.0.4 notes: on iOS, `reload()` in in-app PIP does not stop first and sends no `closed`. Elsewhere `reload()` still sends `closed` (`appRequest`) and then `loading`.
+* README: the `getCampaigns` timeout example now catches `TimeoutException`; the close reason table gives the full back-button condition (`android.backPressEntersPip` and `pip.isInAppPipEnabled`); "Preview" lists the Android restart refusals that arrive as `error` events and the `play(pip)`-on-a-preview difference between Android and iOS.
+
 ## 3.0.4
 
 Built on Shoplive Android SDK 3.0.6 and iOS SDK 3.0.5. Native SDK release notes: [Android](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.6) · [iOS](https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5).
