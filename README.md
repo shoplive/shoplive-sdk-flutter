@@ -31,8 +31,8 @@ Add only the package you need. An app that only plays videos adds `shoplive_play
 
 ```yaml
 dependencies:
-  shoplive_player: 3.0.3     # player, includes shoplive_core
-  # shoplive_streamer: 3.0.3 # broadcast, includes shoplive_core
+  shoplive_player: 3.0.4     # player, includes shoplive_core
+  # shoplive_streamer: 3.0.4 # broadcast, includes shoplive_core
 ```
 
 Then do the platform setup:

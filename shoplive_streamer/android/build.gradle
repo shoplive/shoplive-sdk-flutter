@@ -1,5 +1,5 @@
 group = "cloud.shoplive.shoplive_streamer"
-version = "3.0.3"
+version = "3.0.4"
 
 buildscript {
     // 버전 정합: Kotlin 1.9.25 = shoplive-*-3.0.6 POM의 kotlin-stdlib 버전 (DRAFT-flutter-sdk-302-android S11, SMV-1749·SMV-1899 재확인)

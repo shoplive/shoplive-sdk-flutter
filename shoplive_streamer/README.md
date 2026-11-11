@@ -16,7 +16,7 @@ Broadcast (live streaming) screen for Flutter, built on Shoplive Android SDK **3
 
 ```yaml
 dependencies:
-  shoplive_streamer: 3.0.3   # includes shoplive_core
+  shoplive_streamer: 3.0.4   # includes shoplive_core
 ```
 
 ## Android: Maven repository setup
