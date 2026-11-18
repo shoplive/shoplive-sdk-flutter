@@ -1,3 +1,9 @@
+### What's changed
+Moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. The broadcasting API and behaviour are unchanged; update together with `shoplive_core` and `shoplive_player` 3.0.5.
+
+### Changed
+* iOS: downloads the SDK 3.0.6 `ShopliveStreamerSDK` XCFramework and verifies its new sha256.
+
 ## 3.0.4
 
 Built on Shoplive Android SDK 3.0.6 and iOS SDK 3.0.5. Native SDK release notes: [Android](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.6) · [iOS](https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5).

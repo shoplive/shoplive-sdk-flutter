@@ -42,7 +42,8 @@ enum ShoplivePipPosition {
   unknown,
 }
 
-enum ShoplivePipRatio { ratio1x1, ratio1x2, ratio2x3, ratio3x4, ratio9x16, unknown }
+/// [auto]: Android SDK 3.0.7+ AUTO (the in-app PIP window follows the broadcast aspect ratio; the Android default). iOS ignores aspectRatio.
+enum ShoplivePipRatio { ratio1x1, ratio1x2, ratio2x3, ratio3x4, ratio9x16, auto, unknown }
 
 enum ShopliveNavigationAction { pip, keep, close, unknown }
 

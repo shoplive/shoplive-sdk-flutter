@@ -2,44 +2,11 @@ import Foundation
 import UIKit
 import ShoplivePlayerSDK
 
-/// Thin subclass to observe dismissal (I-R-02). ShoplivePlayerViewController is an open class.
-/// It also owns the facts the startPreview emulation reads (SMV-1899 D11-f) - the controller is the resource, so its facts live
-/// here and not in the handler (CG-2.1).
+/// Thin subclass to observe dismissal (I-R-02), used by `start` only. ShoplivePlayerViewController is an open class.
+/// A startPreview player is the SDK's own ShoplivePlayerViewController (SMV-2021 D2) and has no such hook - playerDidClose and
+/// `close` release it instead.
 final class BridgedPlayerViewController: ShoplivePlayerViewController {
-    /// The current round: a preview round (in-app PIP, muted) or a viewing round, with the key that round was asked for.
-    enum Round {
-        case preview(key: String)
-        case viewing(key: String)
-
-        var key: String {
-            switch self {
-            case .preview(let key), .viewing(let key): return key
-            }
-        }
-    }
-
     var onDismissed: (() -> Void)?
-    /// Created by startPreview. Like Android, only such an instance can be a preview (pointer identity, 3.0.6 ShoplivePlayer.kt:1892);
-    /// a controller made by start never becomes one, even after play(pip).
-    let isPreviewInstance: Bool
-    private(set) var round: Round
-
-    init(campaignKey: String, options: ShoplivePlayOptions, configuration: ShoplivePlayerConfiguration, isPreviewInstance: Bool) {
-        self.isPreviewInstance = isPreviewInstance
-        round = isPreviewInstance ? .preview(key: campaignKey) : .viewing(key: campaignKey)
-        super.init(campaignKey: campaignKey, options: options, configuration: configuration)
-    }
-
-    /// Records the round a Dart play opens, with the iOS SDK's own rule: keep + same campaign keeps the form and the mode whether
-    /// floating or not (ShoplivePlayerView.swift:239-241, :261-263, :283-288 @3.0.5), otherwise presentationStyle decides (:287).
-    /// reload keeps the round (it replays lastPlayOptions), so it does not call this.
-    func recordPlay(campaignKey: String, options: ShoplivePlayOptions) {
-        if options.keepWindowStateOnPlayExecuted && campaignKey == round.key { return }
-        round = options.presentationStyle == .pip ? .preview(key: campaignKey) : .viewing(key: campaignKey)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
@@ -48,9 +15,9 @@ final class BridgedPlayerViewController: ShoplivePlayerViewController {
 }
 
 /// Channel `shoplive_player` methods (Android design section 2.4, iOS design section 2.2).
-/// The iOS SDK has no off-screen player: `start` creates a ShoplivePlayerViewController and presents it (I1).
-/// Instances are created only by `start` and `startPreview`; without one, queries return defaults/saved settings and setters only store.
-/// Main thread only (MethodChannel).
+/// The iOS SDK has no off-screen player: `start` creates a ShoplivePlayerViewController and presents it (I1); `startPreview` adopts
+/// the player the SDK returns and shows itself (SMV-2021 D2). Instances come only from these two; without one, queries return
+/// defaults/saved settings and setters only store. Main thread only (MethodChannel).
 final class PlayerMethodHandler {
     private static let tag = "ShoplivePlayer"
 
@@ -58,10 +25,18 @@ final class PlayerMethodHandler {
     private let hostScreen: HostScreenProviding
     /// Concrete PlayerDelegateBridge (single implementation, no protocol - SMV-1899 design 9); nil once the engine emitters are gone.
     private let makeDelegate: (PlayerMethodHandler) -> PlayerDelegateBridge?
+    private let scheduler: MainScheduler
 
-    private var controller: BridgedPlayerViewController?
+    /// The current session: a BridgedPlayerViewController from `start` or the SDK's startPreview player (public return type only -
+    /// SMV-2021 design a-2). Screen facts are read through `onScreenViewController`.
+    private var controller: (any ShoplivePlayerControlling)?
     /// The SDK holds the delegate weakly (Player:305/347) - keep it alive here (I-L-01).
     private var liveDelegate: PlayerDelegateBridge?
+    /// startPreview calls waiting for their main hop (SMV-2021 design b-1). Held here because the SDK holds delegates weakly.
+    private var pendingPreviews: [PreviewProbe] = []
+    /// App intent generation (CG-11.2): bumped by every adoption (start, preview), close and engine detach. A preview whose call
+    /// is older than the current generation was superseded while it waited and is not adopted (SMV-2021 D8).
+    private var intentGeneration = 0
 
     // Last confirmed settings, carried to every new controller (R2-N1).
     private var savedConfiguration: ShoplivePlayerConfiguration?
@@ -69,27 +44,25 @@ final class PlayerMethodHandler {
     private var savedResizeMode: ShopliveResizeMode?
     private var savedOverlayUI: ShopliveOverlayUIMode?
 
-    init(registry: PendingRequests<PendingRequest>, hostScreen: HostScreenProviding,
+    init(registry: PendingRequests<PendingRequest>, hostScreen: HostScreenProviding, scheduler: MainScheduler,
          makeDelegate: @escaping (PlayerMethodHandler) -> PlayerDelegateBridge?) {
         self.registry = registry
         self.hostScreen = hostScreen
+        self.scheduler = scheduler
         self.makeDelegate = makeDelegate
     }
 
     func handle(_ method: String, _ args: Args) throws -> Any? {
         switch method {
         case "start": return try start(args)
-        case "startPreview": return try startPreview(args)
+        // startPreview is answered later - beginStartPreview, called by the plugin.
         case "play":
             let key = try args.requireString("campaignKey")
             let options = try PlayerMapper.toPlayOptions(try args.optArgs("playOptions"))
-            let c = try running()
-            c.recordPlay(campaignKey: key, options: options)
-            c.play(campaignKey: key, options: options)
+            try running().play(campaignKey: key, options: options) // the SDK ignores the same live campaign (3.0.6)
         case "stop": try running().stop()
-        case "close": controller?.close() // no instance -> idempotent no-op
-        // TODO(SDP-VERIFY): 요확인 — iOS 풀스크린 reload는 closed(appRequest) 뒤 같은 controller로 다시 재생(화면에 있어 playerDidClose가 놓지 않음 — 시뮬레이터 통합 테스트 확인), 실기기 확인 · 근거 SMV-1899
-        case "reload": try running().reload()
+        case "close": close()
+        case "reload": try running().reload() // SDK 3.0.6: loading -> playing, no closed (ShoplivePlayerView.swift:846-876)
         case "send":
             let command = try args.requireString("command")
             let payload = try args.optStringKeyMap("payload") ?? [:]
@@ -100,10 +73,7 @@ final class PlayerMethodHandler {
             c.isMuted = muted
         case "isMuted": return controller?.isMuted ?? false
         case "setResizeMode":
-            let mode = try args.requireWireEnum("mode", PlayerMapper.resizeModeInput)
-            if try args.optString("mode") == "default" {
-                bridgeLog(Self.tag, "resizeMode auto is an Android-only judgement; iOS applies fill")
-            }
+            let mode = try args.requireWireEnum("mode", PlayerMapper.resizeMode)
             controller?.resizeMode = mode
             savedResizeMode = mode
         case "getResizeMode":
@@ -179,7 +149,7 @@ final class PlayerMethodHandler {
         var configuration = effective
         if let mode = savedResizeMode { configuration.appearance.resizeMode = mode }
         if let ui = savedOverlayUI { configuration.overlay.ui = ui }
-        let next = BridgedPlayerViewController(campaignKey: campaignKey, options: options, configuration: configuration, isPreviewInstance: false)
+        let next = BridgedPlayerViewController(campaignKey: campaignKey, options: options, configuration: configuration)
         try presentNewSession(next) {
             if partial != nil {
                 savedConfiguration = effective
@@ -189,31 +159,88 @@ final class PlayerMethodHandler {
         return nil
     }
 
-    // MARK: startPreview (SMV-1899 D11-f: the Android SDK rules emulated with the iOS preview presets)
+    // MARK: startPreview (SMV-2021 D2: the iOS SDK 3.0.6 ShoplivePlayer.startPreview, design b-1)
 
-    /// The iOS SDK 3.0.5 has no startPreview. Same order as Android PreviewLaunchPolicy, using the facts this plugin's controller
-    /// owns (design D11-f table 0-6). Muting while small and unmuting when expanded are the SDK's own (.pip start = preview mode).
-    /// Like Android createPreview, the preview uses the presets only - saved settings stay for the next start.
-    private func startPreview(_ args: Args) throws -> Any? {
-        let campaignKey = try args.requireString("campaignKey") // 0: blank key, before the SDK (D11-d)
-        guard hostScreen.topViewController() != nil else { throw noHostScreen() } // 0
-        if let c = controller, isRunning {
-            // 1-2: a session started by start, or a preview turned into a viewing round by play(fullscreen) -> ignore.
-            guard c.isPreviewInstance, case .preview(let key) = c.round else { return nil }
-            // TODO(SDP-VERIFY): 요확인 — 확장 시 configuration.type이 .live가 되는지 실측(프리뷰를 키우면 SDK reloadAsLive가 type을 .live로 남김 — 3.0.5 ShoplivePlayerView.swift:610-623, 공개 계약 아님) · 근거 SMV-1899
-            if c.configuration.type == .live { return nil } // 3: expanded preview -> viewing
-            if key == campaignKey { return nil } // 4: same key -> keep it
-            // 5: other key -> retire it and present a new preview below (the window comes back at the default position).
+    /// Throws only before the SDK call (argument errors, no host screen) - the caller then replies once. Otherwise `reply` runs
+    /// exactly once: at once for the current player, or on the main hop after the SDK's own next-run-loop notices (settlePreview).
+    /// It runs zero times if the engine detaches before the hop (no Dart side left). The SDK decides viewing / same key /
+    /// other key (design 1.1); the bridge reads only the returned instance, its start facts and its rejection notice.
+    /// Like Android, the preview uses the SDK presets plus muteOnFullScreen only - saved settings stay for the next start.
+    func beginStartPreview(_ args: Args, reply: @escaping (BridgeOutcome) -> Void) throws {
+        let campaignKey = try args.requireString("campaignKey") // blank key: before the SDK (D11-d)
+        let muteOnFullScreen = try args.optBool("muteOnFullScreen") ?? false
+        guard hostScreen.topViewController() != nil else { throw noHostScreen() }
+        // The SDK API is @MainActor; this handler runs on the main thread only (MethodChannel).
+        let player = MainActor.assumeIsolated {
+            ShoplivePlayer.startPreview(campaignKey: campaignKey, muteOnFullScreen: muteOnFullScreen)
         }
-        // 5-6: new preview controller.
-        // TODO(SDP-VERIFY): 요확인 — accessKey 없이 .preview 시작 시 창이 떴다가 closed(userAction)로 끝나고 error 이벤트가 없음(시뮬레이터 관찰, README 한계로 문서화), 실기기 재확인 · 근거 SMV-1899
-        let next = BridgedPlayerViewController(campaignKey: campaignKey, options: .preview, configuration: .preview, isPreviewInstance: true)
-        try presentNewSession(next) {}
-        return nil
+        if let c = controller, c === player {
+            // Same key -> the SDK keeps it; other key while floating -> the SDK swaps the campaign in the same player, no closed.
+            // TODO(SDP-VERIFY): 요확인 — 같은 VC에서 캠페인 교체(swapFloating) 뒤 앞 캠페인의 대기 쿠폰·커스텀 요청 respond와 늦은 통지가 무해한지(브릿지는 flush하지 않음, registry 타임아웃 폴백), 실측 · 근거 SMV-2021
+            reply(.success(nil))
+            return
+        }
+        if let waiting = pendingPreviews.first(where: { $0.player === player }) {
+            waiting.replies.append(reply) // the SDK returned the player still waiting for its hop (same key / retargeted key)
+            // The later call wins (D8): a start / close between the two calls must not cancel this one (cross-check R-1).
+            waiting.intent = intentGeneration
+            return
+        }
+        let probe = PreviewProbe(player: player, session: makeDelegate(self), intent: intentGeneration,
+                                 startedBeforeProbe: Self.isStarted(player), reply: reply)
+        player.delegate = probe // right after the call: the SDK starts and notifies on the next main run loop (Preview.swift:43)
+        pendingPreviews.append(probe)
+        // TODO(SDP-VERIFY): 요확인 — SDK 거부 통지(9520·9000, 호출 안에서 DispatchQueue.main.async로 예약)가 이 홉보다 먼저 도는지(FIFO 가정), 실기기 확인 · 근거 SMV-2021
+        scheduler.post { [weak self] in self?.settlePreview(probe) }
     }
 
-    /// Shared by start and startPreview: wires the delegate, presents `next` and replaces the previous controller with the D6
-    /// retire rules. `onAdopt` runs when `next` becomes the current controller (synchronously in every branch).
+    /// The hop verdict (design 2(b) table). Results are judged from what arrived and what the player reports now - never assumed.
+    private func settlePreview(_ probe: PreviewProbe) {
+        guard let index = pendingPreviews.firstIndex(where: { $0 === probe }) else { return } // engine detached: no reply
+        pendingPreviews.remove(at: index)
+        let player = probe.player
+        if let rejection = probe.rejection {
+            // Watching (9520) or not initialized (9000): the screen did not change. The notice is the call's result only.
+            probe.discard()
+            probe.finish(.failure(BridgeFailure(code: BridgeErrorCode.sdkError, message: rejection.message,
+                                                details: ShopliveErrorWire.toWire(rejection))))
+            return
+        }
+        guard probe.intent == intentGeneration else {
+            // A start / close came while this call waited: the later call wins (an engine detach drops the probe in
+            // onEngineDetached instead - no reply, the preview is left running) (D8 - this call still succeeds,
+            // started or not yet; close() of an unstarted SDK preview drops its pending play - ShoplivePlayerViewController.close).
+            probe.discard() // first, so the closed below does not reach Dart
+            player.close() // always (§1(4) D8: the later start / close wins, cross-check N-1)
+            probe.finish(.success(nil))
+            return
+        }
+        guard Self.isStarted(player) else {
+            probe.discard()
+            probe.finish(.failure(BridgeFailure(code: BridgeErrorCode.sdkError, message: "startPreview: preview not started",
+                                                details: nil)))
+            return
+        }
+        if let previous = controller, previous !== player { retire(previous) }
+        // TODO(SDP-VERIFY): 요확인 — 앱 네이티브 코드가 띄운 미리보기를 SDK가 같은 키·다른 키로 돌려주면 그 delegate를 브릿지가 가져감(반환값만으로 구분 불가), 혼용 앱 실측 · 근거 SMV-2021
+        player.delegate = probe.session ?? DetachedPlayerDelegate.shared
+        adopt(player, delegate: probe.session)
+        probe.replayHeld(into: probe.session) // after the previous session was retired: its late events never follow these
+        if probe.startedBeforeProbe {
+            // Already running when returned (engine re-attach, an app-native preview): its earlier events went elsewhere, so
+            // Dart gets the current state once (as Android St-a).
+            probe.session?.player(player, didReceive: .stateChanged(player.state))
+        }
+        probe.finish(.success(nil))
+    }
+
+    /// Start fact of a player (no SDK isRunning, D-7): floating, or a state other than idle / closed.
+    private static func isStarted(_ player: any ShoplivePlayerControlling) -> Bool {
+        player.isInPictureInPicture || !(player.state == .idle || player.state.isClosed)
+    }
+
+    /// `start` only (a preview is shown by the SDK): wires the delegate, presents `next` and replaces the previous controller with
+    /// the D6 retire rules. `onAdopt` runs when `next` becomes the current controller (synchronously in every branch).
     private func presentNewSession(_ next: BridgedPlayerViewController, onAdopt: () -> Void) throws {
         let delegate = makeDelegate(self)
         if let delegate = delegate { next.delegate = delegate } else { next.delegate = DetachedPlayerDelegate.shared }
@@ -227,7 +254,7 @@ final class PlayerMethodHandler {
             onAdopt()
             return
         }
-        if previous.presentingViewController == nil || previous.isBeingDismissed {
+        guard let previousScreen = onScreenViewController(previous) else {
             // Not on screen (in-app PIP / already going away): present the new player first and retire the previous session
             // only after the presentation started, so a failed start leaves the running session alone (R4-01).
             // SMV-1899 A0-7 (D6): mark the previous session's bridge retired before presenting, so a closed the SDK may send
@@ -253,7 +280,7 @@ final class PlayerMethodHandler {
         retire(previous)
         adopt(next, delegate: delegate)
         onAdopt()
-        previous.dismiss(animated: false) { [weak self, weak next] in
+        previousScreen.dismiss(animated: false) { [weak self, weak next] in
             guard let self = self, let next = next, self.controller === next else { return }
             // TODO(SDP-VERIFY): 요확인 — 이전 플레이어 dismiss 후 새 플레이어 present 실패는 start가 이미 성공을 반환해 Dart에 closed 상태로만 알림(스트리머 IM-m3와 같은 구조), 전환 화면 실측 · 근거 SMV-1749
             if !self.present(next) {
@@ -273,7 +300,7 @@ final class PlayerMethodHandler {
         return !c.state.isClosed
     }
 
-    private func running() throws -> BridgedPlayerViewController {
+    private func running() throws -> any ShoplivePlayerControlling {
         guard let c = controller, isRunning else {
             throw BridgeStateError(code: BridgeErrorCode.notRunning, message: "player is not running")
         }
@@ -285,13 +312,16 @@ final class PlayerMethodHandler {
     /// hands its delegate to the view - ShoplivePlayerViewController.swift:420-422; the same since 3.0.2), so a sender check never
     /// matched an SDK closed (SMV-1899 code cross-check M2).
     /// - Not on screen (in-app PIP / OS PIP closed, the SDK already dismissing it, the synthetic closed of a failed deferred
-    ///   presentation) -> release it now; nothing else would.
-    /// - Still on screen (stop, the stop inside reload in fullscreen) -> keep it. The SDK leaves a stopped screen to the app, and
-    ///   reload plays again in the same controller right after this closed; dismissing it here would end the reloaded session.
-    ///   It is released when it goes away (close() -> SDK dismiss -> controllerDidDismiss) or is replaced (retire).
+    ///   presentation, an SDK preview that never was expanded) -> release it now; nothing else would.
+    /// - Still on screen (stop) -> keep it. The SDK leaves a stopped screen to the app (Dart close dismisses it). It is released
+    ///   when it goes away (start: controllerDidDismiss; SDK preview: `close`) or is replaced (retire). (SDK 3.0.6 reload sends
+    ///   no closed.)
+    /// - An expanded SDK preview has no dismissal hook: its user close relies on the SDK announcing closed after the dismissal
+    ///   started (SDK close(): ShoplivePlayerViewController.swift:469-496).
     func playerDidClose(reportedBy bridge: PlayerDelegateBridge) {
         guard let c = controller, bridge === liveDelegate else { return }
-        guard c.presentingViewController == nil || c.isBeingDismissed else { return }
+        // TODO(SDP-VERIFY): 요확인 — 키운 SDK 미리보기를 사용자가 ×로 닫을 때도 closed가 내림 시작 뒤에 오는지(아니면 닫힌 VC를 계속 쥐고 getState가 closed), Dart stop 뒤 사용자가 화면을 닫는 경로의 해제(다음 close·세션까지 VC 보유 — R-5), 실측 · 근거 SMV-2021
+        guard onScreenViewController(c) == nil else { return }
         release(c)
         controller = nil
     }
@@ -305,7 +335,7 @@ final class PlayerMethodHandler {
 
     /// Detaches the replaced controller first (its closed/dismiss events must not follow the new session's events), answers its
     /// pending coupon/custom requests once with the fallback, then closes it. Later requests from it get DetachedPlayerDelegate.
-    private func retire(_ previous: BridgedPlayerViewController) {
+    private func retire(_ previous: any ShoplivePlayerControlling) {
         // D6 (SMV-1899 A4-5): only this replacement path marks the bridge retired, so callbacks already queued for the main
         // hop are dropped when they run. release() on the current session (playerDidClose, controllerDidDismiss, the
         // synthetic-closed cleanup) does not mark it.
@@ -316,9 +346,32 @@ final class PlayerMethodHandler {
         if !previous.state.isClosed { previous.close() }
     }
 
-    private func adopt(_ next: BridgedPlayerViewController, delegate: PlayerDelegateBridge?) {
+    /// The only place a session becomes current; it supersedes a startPreview still waiting for its hop (intentGeneration).
+    private func adopt(_ next: any ShoplivePlayerControlling, delegate: PlayerDelegateBridge?) {
         controller = next
         liveDelegate = delegate
+        intentGeneration += 1
+    }
+
+    /// Dart close. No instance -> idempotent no-op (a waiting preview is still superseded).
+    private func close() {
+        intentGeneration += 1
+        guard let c = controller else { return }
+        let wasClosed = c.state.isClosed
+        c.close()
+        // Already closed (a stopped screen): the SDK sends no second closed. A start controller is released by its dismissal
+        // hook; an SDK preview has none, so it is released here - otherwise the handler would hold it until the next session.
+        if wasClosed, !(c is BridgedPlayerViewController), controller === c {
+            release(c)
+            controller = nil
+        }
+    }
+
+    /// Screen fact of a session: the view controller when it is presented and not going away, nil otherwise (in-app PIP, an SDK
+    /// preview window, dismissing, or a player that is not a UIViewController - SDK return type is only the protocol).
+    private func onScreenViewController(_ c: any ShoplivePlayerControlling) -> UIViewController? {
+        guard let vc = c as? UIViewController, vc.presentingViewController != nil, !vc.isBeingDismissed else { return nil }
+        return vc
     }
 
     /// D-9: overFullScreen keeps the Flutter screen underneath (in-app PIP).
@@ -337,9 +390,9 @@ final class PlayerMethodHandler {
         BridgeStateError(code: BridgeErrorCode.noHostScreen, message: "no host screen (view controller) to present the player")
     }
 
-    private func release(_ c: BridgedPlayerViewController?) {
+    private func release(_ c: (any ShoplivePlayerControlling)?) {
         guard let c = c else { return }
-        c.onDismissed = nil
+        (c as? BridgedPlayerViewController)?.onDismissed = nil
         c.delegate = DetachedPlayerDelegate.shared
         if c === controller { liveDelegate = nil }
     }
@@ -347,10 +400,14 @@ final class PlayerMethodHandler {
     /// Engine detach (X-01): the session stays; requests are answered by DetachedPlayerDelegate.
     func onEngineDetached() {
         // TODO(SDP-VERIFY): 요확인 - 엔진 재attach 후 이전 엔진 세션 제어 불가(새 핸들러가 VC를 모름) · 근거 DRAFT-flutter-sdk-302-ios/U-04 · 자동 통과 금지(실측)
-        controller?.onDismissed = nil
+        (controller as? BridgedPlayerViewController)?.onDismissed = nil
         controller?.delegate = DetachedPlayerDelegate.shared
         controller = nil
         liveDelegate = nil
+        intentGeneration += 1
+        let waiting = pendingPreviews
+        pendingPreviews.removeAll()
+        waiting.forEach { $0.discard() } // no reply - there is no Dart side left (as CampaignListCalls.cancelAll)
         savedConfiguration = nil
         savedType = PlayerMapper.defaultType
         savedResizeMode = nil
@@ -387,5 +444,83 @@ final class PlayerMethodHandler {
 
     private func kindMismatch() -> BridgeArgumentError {
         BridgeArgumentError(key: "requestId", expected: "request id of matching kind", actual: "other kind")
+    }
+}
+
+/// Delegate of a startPreview player until its main hop (SMV-2021 design b-1). Single implementation, owned by
+/// PlayerMethodHandler (CG-1.1, CG-2.1). Keeps the SDK rejection notice (9520 / 9000) as the call's result - it is not also
+/// emitted as an event (CG-4.2) - and holds every other event and request in arrival order until the verdict.
+private final class PreviewProbe: ShoplivePlayerDelegate {
+    private enum Held {
+        case event(any ShoplivePlayerControlling, ShoplivePlayerEvent)
+        case request(any ShoplivePlayerControlling, ShoplivePlayerRequest)
+    }
+
+    let player: any ShoplivePlayerControlling
+    /// The bridge the player gets when adopted; nil once the engine emitters are gone.
+    let session: PlayerDelegateBridge?
+    /// Intent generation of the latest call waiting on this probe (a joining call refreshes it - the later call wins).
+    var intent: Int
+    /// Started before the probe was attached - its earlier events were not seen (settlePreview supplements the state).
+    let startedBeforeProbe: Bool
+    var replies: [(BridgeOutcome) -> Void]
+    private(set) var rejection: ShopliveError?
+    private var held: [Held] = []
+
+    init(player: any ShoplivePlayerControlling, session: PlayerDelegateBridge?, intent: Int, startedBeforeProbe: Bool,
+         reply: @escaping (BridgeOutcome) -> Void) {
+        self.player = player
+        self.session = session
+        self.intent = intent
+        self.startedBeforeProbe = startedBeforeProbe
+        replies = [reply]
+    }
+
+    func player(_ player: any ShoplivePlayerControlling, didReceive event: ShoplivePlayerEvent) {
+        if rejection == nil, case .error(let e) = event, Self.isRejection(e.code) {
+            rejection = e
+            return
+        }
+        held.append(.event(player, event))
+    }
+
+    func player(_ player: any ShoplivePlayerControlling, didRequest request: ShoplivePlayerRequest) {
+        held.append(.request(player, request))
+    }
+
+    /// Codes with which the SDK refuses to start a preview and reports it on the next main run loop (iOS 3.0.6 PreviewLauncher).
+    private static func isRejection(_ code: ShopliveErrorCode) -> Bool {
+        switch code {
+        case .previewIgnoredWhileViewing, .notInitializedAccessKey: return true
+        default: return false
+        }
+    }
+
+    /// Not adopted: later callbacks go to DetachedPlayerDelegate; held requests get the fallback once, held events are dropped.
+    func discard() {
+        player.delegate = DetachedPlayerDelegate.shared
+        let pending = held
+        held.removeAll()
+        for case .request(_, let request) in pending { DetachedPlayerDelegate.respondFallback(request) }
+    }
+
+    /// Adopted: hands the held callbacks to the session bridge in arrival order (fallback for requests without one).
+    func replayHeld(into session: PlayerDelegateBridge?) {
+        let pending = held
+        held.removeAll()
+        let target: ShoplivePlayerDelegate = session ?? DetachedPlayerDelegate.shared
+        for item in pending {
+            switch item {
+            case .event(let sender, let event): target.player(sender, didReceive: event)
+            case .request(let sender, let request): target.player(sender, didRequest: request)
+            }
+        }
+    }
+
+    /// Exactly one reply per joined call.
+    func finish(_ outcome: BridgeOutcome) {
+        let pending = replies
+        replies.removeAll()
+        pending.forEach { $0(outcome) }
     }
 }

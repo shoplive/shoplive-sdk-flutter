@@ -454,8 +454,9 @@ class _ShopliveSamplePageState extends State<ShopliveSamplePage> {
               ),
             ),
           ),
-          // SMV-1899 수동 검증용: 네이티브 startPreview(Android) / 플러그인 흉내(iOS), 방송 목록 조회
+          // 수동 검증용: 양 OS SDK startPreview(SMV-2021 D2), 키워도 음소거 유지(D1), 방송 목록 조회
           _button('startPreview()', () => _player.startPreview(_campaignKey.text.trim())),
+          _button('startPreview(muteOnFullScreen)', () => _player.startPreview(_campaignKey.text.trim(), muteOnFullScreen: true)),
           _button('getCampaigns', () async {
             final r = await ShoplivePlayerAPI.getCampaigns(request: const ShopliveCampaignListRequest(size: 5));
             final items = r.campaigns.map((c) => '${c.campaignKey}:${c.lifecycle.status.runtimeType}');

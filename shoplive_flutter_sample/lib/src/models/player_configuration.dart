@@ -190,21 +190,32 @@ class ShopliveInsets {
 }
 
 class ShopliveSoundOptions {
-  const ShopliveSoundOptions({this.muteOnStart, this.mixWithOthers});
+  const ShopliveSoundOptions({this.muteOnStart, this.mixWithOthers, this.muteOnFullScreen});
 
   final bool? muteOnStart;
   final bool? mixWithOthers;
+
+  /// Keeps a preview (opened as in-app PIP) muted when the viewer expands it to fullscreen. SDK default `false`: expanding unmutes.
+  /// Applies to a preview session opened with `start` (type preview, presentationStyle pip); `startPreview` uses its own
+  /// `muteOnFullScreen` argument instead. Android SDK 3.0.7+ and iOS SDK 3.0.6+ `SoundOptions.muteOnFullScreen`.
+  /// Omitted keeps the current value.
+  final bool? muteOnFullScreen;
 
   @internal
   Map<String, Object?> toWire() {
     final m = <String, Object?>{};
     wire.putIfNotNull(m, 'muteOnStart', muteOnStart);
     wire.putIfNotNull(m, 'mixWithOthers', mixWithOthers);
+    wire.putIfNotNull(m, 'muteOnFullScreen', muteOnFullScreen);
     return m;
   }
 
   static ShopliveSoundOptions? _fromWire(Map<String, Object?>? m) =>
-      m == null ? null : ShopliveSoundOptions(muteOnStart: wire.asType<bool>(m['muteOnStart']), mixWithOthers: wire.asType<bool>(m['mixWithOthers']));
+      m == null ? null : ShopliveSoundOptions(
+          muteOnStart: wire.asType<bool>(m['muteOnStart']),
+          mixWithOthers: wire.asType<bool>(m['mixWithOthers']),
+          muteOnFullScreen: wire.asType<bool>(m['muteOnFullScreen']),
+        );
 }
 
 class ShopliveAppearanceOptions {

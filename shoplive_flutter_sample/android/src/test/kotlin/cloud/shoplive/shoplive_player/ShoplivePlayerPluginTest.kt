@@ -20,9 +20,9 @@ class ShoplivePlayerPluginTest {
         assertEquals("plugin detached", result.errorMessage)
     }
 
-    @Test // case: G-7 (R6-A5, SMV-1899) — 나중에 회신하는 getCampaigns도 붙기 전·인자 오류는 1회로 즉시 끝난다
+    @Test // case: G-7 (R6-A5, SMV-1899), S-01 (SMV-2021) — 나중에 회신하는 getCampaigns·startPreview도 붙기 전·인자 오류는 1회로 즉시 끝난다
     fun beforeAttach_campaignCalls_completeOnce() {
-        for (method in listOf("getCampaigns", "cancelGetCampaigns")) {
+        for (method in listOf("getCampaigns", "cancelGetCampaigns", "startPreview")) {
             val result = RecordingResult()
             ShoplivePlayerPlugin().onMethodCall(MethodCall(method, mapOf("requestId" to "1")), result)
             assertEquals(method, listOf("error"), result.calls)

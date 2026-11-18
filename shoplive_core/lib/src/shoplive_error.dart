@@ -9,7 +9,7 @@ abstract final class ShoplivePlatformErrorCode {
   /// 실행 중인 플레이어 세션이 없음.
   static const String notRunning = 'NOT_RUNNING';
 
-  /// SDK 호출 실패. getCampaigns의 SDK 실패는 `details`에 [ShopliveError] wire를 싣는다 — [ShopliveError.tryParse]로 읽는다.
+  /// SDK 호출 실패. getCampaigns의 SDK 실패와 shoplive_player startPreview가 SDK에 거부된 경우(PREVIEW_IGNORED_WHILE_VIEWING 9520, iOS 미초기화 9000)는 `details`에 [ShopliveError] wire를 싣는다 — [ShopliveError.tryParse]로 읽는다.
   static const String sdkError = 'SDK_ERROR';
 
   /// 앱이 `ShopliveCancelToken`으로 취소한 요청(shoplive_player `ShoplivePlayerAPI.getCampaigns`).
