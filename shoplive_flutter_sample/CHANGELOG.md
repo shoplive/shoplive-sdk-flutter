@@ -20,7 +20,7 @@ This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can
 * Android: the in-app PIP window follows the broadcast's aspect ratio by default (3.0.4: 9:16), always fills its window, and appears only after the broadcast loads. If that first load fails or times out, the window does not open and `events` delivers an `error` with `FAILED_NETWORK` (recoverable); call `start` again.
 * Android: for a landscape broadcast, `pip.scale` sets the height of the in-app PIP window.
 * Android: `isMuted()` now reflects the mute button in the player and the volume keys.
-* Android: `ShoplivePlayOptions.keepWindowStateOnPlayExecuted` keeps the current form (fullscreen or PIP) when `play` switches to a different campaign.
+* `ShoplivePlayOptions.keepWindowStateOnPlayExecuted` keeps the current form (fullscreen or PIP) when `play` switches to a different campaign. Android and iOS. iOS: during system PIP, the new campaign now plays in the same PIP window at once instead of waiting until the user returns to the app.
 * iOS: downloads the SDK 3.0.6 `ShoplivePlayerSDK` XCFramework and verifies its new sha256.
 
 ### Error codes
