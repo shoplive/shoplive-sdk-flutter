@@ -2,7 +2,7 @@
 This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can stay muted when the viewer expands them, `startPreview` follows the same SDK rules on Android and iOS, and playback fixes from both native SDKs are included. Android SDK 3.0.7 changes are included as well ([release notes](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.7)); if your app also calls the Android SDK from native code, rebuild that code against 3.0.8.
 
 ### Breaking
-* `ShoplivePipRatio` has a new value, `auto` (before `unknown`). A `switch` over `ShoplivePipRatio` without a `default` (or `_`) case must add it.
+* `ShoplivePipRatio` has a new value, `auto`. A `switch` over `ShoplivePipRatio` without a `default` (or `_`) case must add it.
 * `startPreview` can now fail where 3.0.4 completed: while a broadcast is being watched (both platforms) and, on iOS, before `Shoplive.initialize`. Its `Future` ends with `PlatformException(code: 'SDK_ERROR')`, so wrap the call in `try` / `catch` if you did not already.
 * Code that `implements` `ShopliveSoundOptions` or `ShoplivePlayer` (for example a test double) must add `muteOnFullScreen` and the new `muteOnFullScreen` parameter of `startPreview`.
 
@@ -21,7 +21,6 @@ This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can
 * Android: for a landscape broadcast, `pip.scale` sets the height of the in-app PIP window.
 * Android: `isMuted()` now reflects the mute button in the player and the volume keys.
 * `ShoplivePlayOptions.keepWindowStateOnPlayExecuted` keeps the current form (fullscreen or PIP) when `play` switches to a different campaign. Android and iOS. iOS: during system PIP, the new campaign now plays in the same PIP window at once instead of waiting until the user returns to the app.
-* iOS: downloads the SDK 3.0.6 `ShoplivePlayerSDK` XCFramework and verifies its new sha256.
 
 ### Error codes
 | When | Before (3.0.4) | Now (3.0.5) | What to do |

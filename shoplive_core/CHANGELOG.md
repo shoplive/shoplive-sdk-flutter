@@ -3,8 +3,6 @@ Moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6 (Android SDK 3.0.7 is incl
 
 ### Changed
 * A new error code can appear in `ShopliveError.code`: `PREVIEW_IGNORED_WHILE_VIEWING` (9520, not recoverable), returned when `shoplive_player` `startPreview` is called while a broadcast is being watched. Keep treating `code` as an opaque string.
-* Android: `shoplive-core`, `shoplive-player-sdk` and `shoplive-streamer-sdk` must keep the same version; the three Flutter packages pin 3.0.8 together. Check a release build of your app once after upgrading.
-* iOS: downloads the SDK 3.0.6 XCFrameworks (`ShopliveCore`, `ShopLiveWebRTCHelperSDK`, `WebRTC`) and verifies their new sha256 values.
 
 ## 3.0.4
 
