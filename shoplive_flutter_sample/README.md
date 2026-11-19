@@ -236,7 +236,7 @@ await player.startPreview('CAMPAIGN_KEY');
 await player.startPreview('CAMPAIGN_KEY', muteOnFullScreen: true);
 ```
 
-- Android and iOS follow the same SDK preview rules. If a preview with the same key is showing, it is kept, and a new `muteOnFullScreen` value is ignored (close it and call `startPreview` again to change it). Another key switches the campaign in the open preview window. `play(key)` in fullscreen turns a preview into a viewing session.
+- Android and iOS behave the same. If a preview with the same key is showing, it is kept, and a new `muteOnFullScreen` value is ignored (close it and call `startPreview` again to change it). Another key switches the campaign in the open preview window. `play(key)` in fullscreen turns a preview into a viewing session.
 - If a broadcast is being watched (a player opened with `start`, or a preview the viewer expanded), the call fails with `SDK_ERROR` and the broadcast keeps playing. `ShopliveError.tryParse(e.details)` gives the code `PREVIEW_IGNORED_WHILE_VIEWING` (9520).
 - Call it after `Shoplive.initialize`. Before that, iOS fails with `SDK_ERROR` and the code `NOT_INITIALIZED_ACCESS_KEY` (9000) in `details`; Android fails with `SDK_ERROR` without `details`.
 - Other errors known when you call it also end the `Future`: a blank key `INVALID_ARGUMENT`, no host screen `NO_HOST_SCREEN`, and `SDK_ERROR` when the preview did not start. Errors after the start arrive as `error` events. Await `startPreview` before you call other player methods. (iOS: if you call `start` or `close` before it has completed, the preview is replaced or closed and `startPreview` still completes successfully.)

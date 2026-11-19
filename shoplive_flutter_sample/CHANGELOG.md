@@ -1,5 +1,5 @@
 ### What's changed
-This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can stay muted when the viewer expands them, `startPreview` follows the same SDK rules on Android and iOS, and playback fixes from both native SDKs are included. Android SDK 3.0.7 changes are included as well ([release notes](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.7)); if your app also calls the Android SDK from native code, rebuild that code against 3.0.8.
+This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can stay muted when the viewer expands them, `startPreview` with another key switches the campaign in the same window on iOS too, and playback fixes from both native SDKs are included. Android SDK 3.0.7 changes are included as well ([release notes](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.7)); if your app also calls the Android SDK from native code, rebuild that code against 3.0.8.
 
 ### Breaking
 * `ShoplivePipRatio` has a new value, `auto`. A `switch` over `ShoplivePipRatio` without a `default` (or `_`) case must add it.
@@ -11,7 +11,7 @@ This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can
 * `ShoplivePipRatio.auto`: on Android the in-app PIP window follows the broadcast's aspect ratio. It is the Android default. iOS ignores `aspectRatio`, as before.
 
 ### Changed
-* iOS: `startPreview` now uses the iOS SDK preview, so both platforms follow the same rules. Another campaign key switches the campaign in the open preview window instead of reopening the window.
+* iOS: `startPreview` with another campaign key now switches the campaign in the open preview window instead of reopening the window, as on Android.
 * Calling `startPreview` while a broadcast is being watched now fails with `SDK_ERROR` and the error `PREVIEW_IGNORED_WHILE_VIEWING` (9520) in `details`; the broadcast keeps playing. 3.0.4 ignored the call without an error. Read it with `ShopliveError.tryParse(e.details)`.
 * Calling `startPreview` before `Shoplive.initialize`: iOS now fails with `SDK_ERROR` and `NOT_INITIALIZED_ACCESS_KEY` (9000) in `details` (3.0.4 opened a window that closed again without an error). Android fails with `SDK_ERROR` without `details`, as before.
 * `play` with the campaign that is already on screen is ignored and sends no events. To start it over, call `stop` and then `play`, or `reload`. Android and iOS.
