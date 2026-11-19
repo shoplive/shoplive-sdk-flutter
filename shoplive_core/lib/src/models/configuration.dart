@@ -1,5 +1,5 @@
 import 'package:meta/meta.dart';
-/// `Shoplive.initialize` 설정(design.md rev2 §2.4·§2.6). null 필드는 키를 생략해 SDK 기본값을 쓴다.
+/// `Shoplive.initialize` 설정. null 필드는 키를 생략해 SDK 기본값을 쓴다.
 class ShopliveConfiguration {
   const ShopliveConfiguration({
     required this.accessKey,

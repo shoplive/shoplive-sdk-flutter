@@ -6,7 +6,7 @@ import 'models/player_enums.dart';
 export 'package:shoplive_core/shoplive_core_bridge.dart' show toWire, parseWireEnum;
 
 /// [ShopliveResizeMode.auto]의 wire 값. enum 이름과 다른 유일한 wire 값이다 — Android SDK 3.0.6 `DEFAULT`를 따르는데
-/// `default`는 Dart 예약어라 enum 이름을 쓸 수 없다(사용자 결정 — SMV-1899 D9).
+/// `default`는 Dart 예약어라 enum 이름을 쓸 수 없다.
 const String _resizeModeAutoWire = 'default';
 
 String resizeModeToWire(ShopliveResizeMode mode) => mode == ShopliveResizeMode.auto ? _resizeModeAutoWire : toWire(mode);
@@ -32,7 +32,7 @@ Map<String, Object?>? asStringMap(Object? raw) {
 
 T? asType<T>(Object? v) => v is T ? v : null;
 
-/// null 필드를 키 생략으로(키 부재 = 기본값/현재 값 유지, design §2.2).
+/// null 필드를 키 생략으로(키 부재 = 기본값/현재 값 유지).
 void putIfNotNull(Map<String, Object?> m, String key, Object? value) {
   if (value != null) m[key] = value;
 }

@@ -1,4 +1,4 @@
-/// 방송(캠페인) 목록 조회 모델(SDK 3.0.6 Android · 3.0.5 iOS `ShoplivePlayerAPI.getCampaigns` — SMV-1899 D10).
+/// 방송(캠페인) 목록 조회 모델(`ShoplivePlayerAPI.getCampaigns`).
 /// 새 공개 타입은 `final`이다 — 앱이 implements하지 않으므로 필드를 더해도 앱 코드가 깨지지 않는다.
 library;
 

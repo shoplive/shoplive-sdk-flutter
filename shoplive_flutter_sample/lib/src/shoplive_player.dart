@@ -13,7 +13,7 @@ import 'platform/shoplive_player_method_channel.dart';
 import 'platform/shoplive_player_platform_interface.dart';
 import 'wire.dart';
 
-/// 풀스크린 플레이어(design.md rev2 §2.4). 모든 메서드는 실패 시 PlatformException
+/// 풀스크린 플레이어. 모든 메서드는 실패 시 PlatformException
 /// (INVALID_ARGUMENT / NO_HOST_SCREEN / NOT_RUNNING / SDK_ERROR)을 던진다.
 typedef _C = ShoplivePlayerContract;
 
@@ -37,8 +37,8 @@ class ShoplivePlayer {
 
   // ---- 제어 ----
 
-  /// [configuration]은 현재 설정 위에 병합된다. 생략하면 현재 설정으로 시작한다(CFG-01).
-  /// presentationStyle=pip인데 병합 결과 pip.isInAppPipEnabled가 false면 INVALID_ARGUMENT(B-09).
+  /// [configuration]은 현재 설정 위에 병합된다. 생략하면 현재 설정으로 시작한다.
+  /// presentationStyle=pip인데 병합 결과 pip.isInAppPipEnabled가 false면 INVALID_ARGUMENT.
   Future<void> start(String campaignKey, {ShoplivePlayOptions? playOptions, ShoplivePlayerConfiguration? configuration}) {
     final args = <String, Object?>{'campaignKey': campaignKey};
     putIfNotNull(args, 'playOptions', playOptions?.toWire());
@@ -113,7 +113,7 @@ class ShoplivePlayer {
 
   Future<bool> isRunning() => _invokeRequired<bool>(_C.isRunning);
 
-  /// 현재 설정 위에 병합된다(CFG-01).
+  /// 현재 설정 위에 병합된다.
   Future<void> setConfiguration(ShoplivePlayerConfiguration configuration) =>
       _invokeVoid(_C.setConfiguration, {'configuration': configuration.toWire()});
 
@@ -127,7 +127,7 @@ class ShoplivePlayer {
 
   Stream<ShoplivePlayerEvent>? _events;
 
-  /// 플레이어 이벤트(design §2.5). 형식 오류·미지 이벤트는 [ShoplivePlayerUnknownEvent]로 온다(스트림을 끊지 않음).
+  /// 플레이어 이벤트. 형식 오류·미지 이벤트는 [ShoplivePlayerUnknownEvent]로 온다(스트림을 끊지 않음).
   Stream<ShoplivePlayerEvent> get events => _events ??= _platform.events().map(ShoplivePlayerEvent.fromWire);
 
   // ---- 요청(design §2.7, X-10) ----
@@ -235,7 +235,7 @@ class ShoplivePlayer {
 
   Future<void> _invokeVoid(String method, [Map<String, Object?>? args]) => _platform.invokeMethod<void>(method, args);
 
-  /// 계약상 값이 있어야 하는 반환. null이면 PlatformException(SDK_ERROR)(pair #15).
+  /// 계약상 값이 있어야 하는 반환. null이면 PlatformException(SDK_ERROR).
   Future<T> _invokeRequired<T extends Object>(String method) async {
     final value = await _platform.invokeMethod<T>(method);
     if (value == null) {
@@ -245,8 +245,8 @@ class ShoplivePlayer {
   }
 }
 
-/// 요청 스트림 래퍼: 사용자 onData가 동기적으로 throw하면 해당 요청을 폴백 응답하고 예외를 다시 던진다(pair #22).
-/// (broadcast 컨트롤러는 리스너 예외를 add 호출자가 아니라 구독 Zone으로 보내므로 add를 감싸서는 잡을 수 없다 — 실측.)
+/// 요청 스트림 래퍼: 사용자 onData가 동기적으로 throw하면 해당 요청을 폴백 응답하고 예외를 다시 던진다.
+/// (broadcast 컨트롤러는 리스너 예외를 add 호출자가 아니라 구독 Zone으로 보내므로 add를 감싸서는 잡을 수 없다.)
 class _GuardedRequestStream<T> extends Stream<T> {
   _GuardedRequestStream(this._source, this._onListenerError);
 

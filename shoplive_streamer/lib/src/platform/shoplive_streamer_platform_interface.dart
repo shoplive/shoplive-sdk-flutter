@@ -2,7 +2,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'shoplive_streamer_method_channel.dart';
 
-/// shoplive_streamer 플랫폼 인터페이스(design §2.4·§2.5).
+/// shoplive_streamer 플랫폼 인터페이스.
 abstract class ShopliveStreamerPlatform extends PlatformInterface {
   ShopliveStreamerPlatform() : super(token: _token);
 

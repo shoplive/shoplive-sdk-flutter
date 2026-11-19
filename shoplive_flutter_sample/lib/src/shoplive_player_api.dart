@@ -8,7 +8,7 @@ import 'models/campaign_list.dart';
 import 'platform/shoplive_player_method_channel.dart';
 import 'platform/shoplive_player_platform_interface.dart';
 
-/// Shoplive 서버 조회 API — 네이티브 Android·iOS `ShoplivePlayerAPI`와 같은 이름(SMV-1899 D10). 세션과 무관하다.
+/// Shoplive 서버 조회 API — 네이티브 Android·iOS `ShoplivePlayerAPI`와 같은 이름. 세션과 무관하다.
 /// `Shoplive.initialize`로 accessKey를 정한 뒤 부른다.
 abstract final class ShoplivePlayerAPI {
   /// 방송 목록을 조회한다. Future는 다음 중 하나로 정확히 1번 끝난다:
@@ -58,7 +58,7 @@ abstract final class ShoplivePlayerAPI {
   static ShoplivePlayerPlatform get _platform => ShoplivePlayerPlatform.instance;
 
   /// 요청 id. 아이솔레이트마다 다른 접두사를 둔다 — 핫 리스타트 뒤에도 네이티브에 남은 이전 아이솔레이트의 미완료 id와 겹치지 않게
-  /// (네이티브 플러그인은 핫 리스타트에 detach되지 않는다 — SMV-1899 D10-e).
+  /// (네이티브 플러그인은 핫 리스타트에 detach되지 않는다).
   static final String _idPrefix = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
   static int _seq = 0;
 
@@ -76,7 +76,7 @@ final class ShopliveCancelToken {
 
   bool get isCancelled => _cancelled;
 
-  /// 아직 끝나지 않은 호출 수 — 끝난 호출이 토큰에서 떨어지는지 테스트로 고정한다(교차검증 L1).
+  /// 아직 끝나지 않은 호출 수 — 끝난 호출이 토큰에서 떨어지는지 테스트로 고정한다.
   @visibleForTesting
   int get listenerCount => _listeners.length;
 

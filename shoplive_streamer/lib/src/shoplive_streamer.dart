@@ -7,10 +7,10 @@ import 'package:shoplive_core/shoplive_core_bridge.dart';
 import 'platform/shoplive_streamer_method_channel.dart';
 import 'platform/shoplive_streamer_platform_interface.dart';
 
-/// 방송 상태(wire: design §2.3). 미지 값은 `unknown`(B-02).
+/// 방송 상태. 미지 값은 `unknown`.
 enum ShopliveBroadcastState { idle, preview, connecting, live, reconnecting, ended, unknown }
 
-/// 방송 화면(design.md rev2 §2.4 shoplive_streamer). 실패 시 PlatformException(INVALID_ARGUMENT / NO_HOST_SCREEN / SDK_ERROR).
+/// 방송 화면. 실패 시 PlatformException(INVALID_ARGUMENT / NO_HOST_SCREEN / SDK_ERROR).
 class ShopliveStreamer {
   ShopliveStreamer._();
 
@@ -21,7 +21,7 @@ class ShopliveStreamer {
 
   ShopliveStreamerPlatform get _platform => ShopliveStreamerPlatform.instance;
 
-  /// 방송 키로 방송 화면을 연다. 호출마다 새 방송 세션을 만든다(ST-01).
+  /// 방송 키로 방송 화면을 연다. 호출마다 새 방송 세션을 만든다.
   ///
   /// [webPageUrl]: 방송 화면에서 스와이프로 여는 웹페이지(SDK 3.0.3+, Android·iOS). null이면 웹페이지 없음(3.0.2와 같음).
   /// `http://`·`https://`로 시작(대소문자 무관)하고, userinfo·포트를 뺀 호스트가 비어 있지 않고, authority에 역슬래시가 없으며,
@@ -50,7 +50,7 @@ class ShopliveStreamer {
   Stream<ShopliveStreamerEvent> get events => _events ??= _platform.events().map(ShopliveStreamerEvent.fromWire);
 }
 
-/// `shoplive_streamer/events` 이벤트(design §2.5).
+/// `shoplive_streamer/events` 이벤트.
 sealed class ShopliveStreamerEvent {
   const ShopliveStreamerEvent();
 

@@ -2,7 +2,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'shoplive_player_method_channel.dart';
 
-/// shoplive_player 플랫폼 인터페이스. 인자·이벤트는 wire Map(design §2.4·§2.5).
+/// shoplive_player 플랫폼 인터페이스. 인자·이벤트는 wire Map.
 abstract class ShoplivePlayerPlatform extends PlatformInterface {
   ShoplivePlayerPlatform() : super(token: _token);
 
@@ -22,6 +22,6 @@ abstract class ShoplivePlayerPlatform extends PlatformInterface {
   /// `shoplive_player/events` 원시 스트림.
   Stream<Object?> events();
 
-  /// `shoplive_player/requests` 원시 스트림. 구독 = 네이티브 sink 존재(§2.7-2).
+  /// `shoplive_player/requests` 원시 스트림. 구독 = 네이티브 sink 존재.
   Stream<Object?> requests();
 }

@@ -1,6 +1,6 @@
 /// Shoplive 플레이어(player) Flutter 플러그인 — Android `cloud.shoplive:shoplive-player-sdk` · iOS `ShoplivePlayerSDK`(버전은 README).
 ///
-/// 채널 계약: design.md rev2 §2.4·§2.5·§2.7 (DRAFT-flutter-sdk-302-android). shoplive_core API를 함께 export한다.
+/// shoplive_core API를 함께 export한다.
 library shoplive_player;
 
 export 'package:shoplive_core/shoplive_core.dart';
