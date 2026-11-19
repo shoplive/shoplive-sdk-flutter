@@ -13,7 +13,7 @@ import 'platform/shoplive_player_method_channel.dart';
 import 'platform/shoplive_player_platform_interface.dart';
 import 'wire.dart';
 
-/// 풀스크린 플레이어(design.md rev2 §2.4). 모든 메서드는 실패 시 PlatformException
+/// 풀스크린 플레이어. 모든 메서드는 실패 시 PlatformException
 /// (INVALID_ARGUMENT / NO_HOST_SCREEN / NOT_RUNNING / SDK_ERROR)을 던진다.
 typedef _C = ShoplivePlayerContract;
 
@@ -37,8 +37,8 @@ class ShoplivePlayer {
 
   // ---- 제어 ----
 
-  /// [configuration]은 현재 설정 위에 병합된다. 생략하면 현재 설정으로 시작한다(CFG-01).
-  /// presentationStyle=pip인데 병합 결과 pip.isInAppPipEnabled가 false면 INVALID_ARGUMENT(B-09).
+  /// [configuration]은 현재 설정 위에 병합된다. 생략하면 현재 설정으로 시작한다.
+  /// presentationStyle=pip인데 병합 결과 pip.isInAppPipEnabled가 false면 INVALID_ARGUMENT.
   Future<void> start(String campaignKey, {ShoplivePlayOptions? playOptions, ShoplivePlayerConfiguration? configuration}) {
     final args = <String, Object?>{'campaignKey': campaignKey};
     putIfNotNull(args, 'playOptions', playOptions?.toWire());
@@ -46,16 +46,24 @@ class ShoplivePlayer {
     return _invokeVoid(_C.start, args);
   }
 
-  /// 소리 없는 작은 미리보기 창(in-App PIP)을 띄운다. 시청자가 풀스크린으로 키우면 소리가 켜진다(SMV-1899 D11).
-  /// - 시청 중인 세션이 있으면 아무것도 하지 않는다. 같은 키 미리보기가 떠 있으면 그대로 두고(멈췄거나 창이 없으면 다시 시작),
-  ///   다른 키면 미리보기의 캠페인을 바꾼다 — Android는 네이티브 `ShoplivePlayer.startPreview` 규칙 그대로, iOS는 플러그인이
-  ///   preview 프리셋으로 같은 판단을 흉내 내며 다른 키면 창을 새로 띄운다(위치 초기화, loading → inAppPip를 다시 받음).
-  /// - 호출 시점에 알 수 있는 오류는 이 Future로 온다: 빈·공백 키 `INVALID_ARGUMENT`, 호스트 화면 없음 `NO_HOST_SCREEN`, Android에서
-  ///   SDK가 미리보기를 시작하지 않음(미초기화·진입 거부 — 원인은 구분하지 않는다) `SDK_ERROR`. 떠 있는 미리보기를 다시 시작하다 거부되거나
-  ///   시작 뒤 생긴 오류는 [events]의 error로 온다. [Shoplive.initialize] 뒤에 부른다 — iOS는 initialize 전 호출을 오류로 알리지 않을 수 있다
-  ///   (창이 떴다가 closed(userAction)로 끝나고 error 없음 — iOS SDK 3.0.5 동작, README Known limitations).
-  /// - 미리보기는 SDK 프리셋만 쓴다 — [setConfiguration]·[setResizeMode]·[setOverlayUI]로 보관한 값은 다음 [start]에 쓰인다.
-  Future<void> startPreview(String campaignKey) => _invokeVoid(_C.startPreview, {'campaignKey': campaignKey});
+  /// 소리 없는 작은 미리보기 창(in-App PIP)을 띄운다. 시청자가 풀스크린으로 키우면 소리가 켜진다 — [muteOnFullScreen]이 true면
+  /// 키워도 음소거로 시작한다(미리보기 중 소리를 켰어도). 생략·false면 소리가 켜진다.
+  /// - 이 Future는 `SDK_ERROR` 등 [PlatformException]으로 끝날 수 있다 — `try`/`catch`로 감싸 부른다.
+  /// - 띄울지 말지는 양 OS 네이티브 SDK의 `startPreview` 규칙을 그대로 따른다. 같은 키 미리보기가 이미 떠 있으면 SDK가 그 미리보기를
+  ///   그대로 쓰고 새 [muteOnFullScreen] 값은 무시한다(양 OS) — 바꾸려면 미리보기를 닫고 다시 호출한다.
+  ///   다른 키면 SDK가 같은 창에서 캠페인을 바꾼다(창을 닫지 않으므로 closed가 오지 않는다).
+  /// - 시청 중(사용자가 보고 있는 플레이어가 떠 있음 — 기준은 네이티브 SDK)이면 그 화면을 바꾸지 않고 이 Future가 `SDK_ERROR`로 끝난다.
+  ///   `details`는 [ShopliveError] 맵(code `PREVIEW_IGNORED_WHILE_VIEWING`, rawCode 9520, recoverable false)이다 —
+  ///   [ShopliveError.tryParse]로 읽는다. 양 OS 같다.
+  /// - [Shoplive.initialize] 전에 부르면 미리보기를 띄우지 않고 `SDK_ERROR`로 끝난다. iOS는 `details`에 SDK 오류(rawCode 9000)를 싣는다.
+  ///   Android는 네이티브 SDK가 이 오류를 앱에 넘기지 않아 `details`가 없다(진입 거부와 원인을 구분할 수 없다).
+  /// - 호출 전에 거르는 오류: 빈·공백 키 `INVALID_ARGUMENT`, 호스트 화면 없음 `NO_HOST_SCREEN`. 미리보기가 뜬 뒤 생긴 오류(다시 시작하다
+  ///   거부·네트워크 등)는 [events]의 error로 온다.
+  /// - Future는 늦어도 다음 메인 루프 차례까지 끝난다. 이어서 다른 제어 메서드를 부를 때는 이 Future를 기다린 뒤 부른다
+  ///   (iOS: 기다리는 중 start·close가 오면 미리보기는 대체·닫히고 이 Future는 성공. Android: 판정에 영향 없음 — 시청 중이었으면 9520).
+  /// - 미리보기는 SDK 프리셋(+ [muteOnFullScreen])만 쓴다 — [setConfiguration]·[setResizeMode]·[setOverlayUI]로 보관한 값은 다음 [start]에 쓰인다.
+  Future<void> startPreview(String campaignKey, {bool muteOnFullScreen = false}) =>
+      _invokeVoid(_C.startPreview, {'campaignKey': campaignKey, 'muteOnFullScreen': muteOnFullScreen});
 
   Future<void> play(String campaignKey, {ShoplivePlayOptions? playOptions}) {
     final args = <String, Object?>{'campaignKey': campaignKey};
@@ -81,7 +89,7 @@ class ShoplivePlayer {
 
   Future<bool> isMuted() => _invokeRequired<bool>(_C.isMuted);
 
-  /// [ShopliveResizeMode.auto]는 Android 전용 판정이고 iOS에서는 fill로 적용된다.
+  /// [ShopliveResizeMode.auto]는 창 크기로 fill·fit을 고른다(Android, iOS SDK 3.0.6+). `getResizeMode()`는 고른 결과가 아니라 `auto`를 돌려준다.
   Future<void> setResizeMode(ShopliveResizeMode mode) => _invokeVoid(_C.setResizeMode, {'mode': resizeModeToWire(mode)});
 
   Future<ShopliveResizeMode> getResizeMode() async => resizeModeFromWire(await _invokeRequired<String>(_C.getResizeMode));
@@ -105,7 +113,7 @@ class ShoplivePlayer {
 
   Future<bool> isRunning() => _invokeRequired<bool>(_C.isRunning);
 
-  /// 현재 설정 위에 병합된다(CFG-01).
+  /// 현재 설정 위에 병합된다.
   Future<void> setConfiguration(ShoplivePlayerConfiguration configuration) =>
       _invokeVoid(_C.setConfiguration, {'configuration': configuration.toWire()});
 
@@ -119,7 +127,7 @@ class ShoplivePlayer {
 
   Stream<ShoplivePlayerEvent>? _events;
 
-  /// 플레이어 이벤트(design §2.5). 형식 오류·미지 이벤트는 [ShoplivePlayerUnknownEvent]로 온다(스트림을 끊지 않음).
+  /// 플레이어 이벤트. 형식 오류·미지 이벤트는 [ShoplivePlayerUnknownEvent]로 온다(스트림을 끊지 않음).
   Stream<ShoplivePlayerEvent> get events => _events ??= _platform.events().map(ShoplivePlayerEvent.fromWire);
 
   // ---- 요청(design §2.7, X-10) ----
@@ -227,7 +235,7 @@ class ShoplivePlayer {
 
   Future<void> _invokeVoid(String method, [Map<String, Object?>? args]) => _platform.invokeMethod<void>(method, args);
 
-  /// 계약상 값이 있어야 하는 반환. null이면 PlatformException(SDK_ERROR)(pair #15).
+  /// 계약상 값이 있어야 하는 반환. null이면 PlatformException(SDK_ERROR).
   Future<T> _invokeRequired<T extends Object>(String method) async {
     final value = await _platform.invokeMethod<T>(method);
     if (value == null) {
@@ -237,8 +245,8 @@ class ShoplivePlayer {
   }
 }
 
-/// 요청 스트림 래퍼: 사용자 onData가 동기적으로 throw하면 해당 요청을 폴백 응답하고 예외를 다시 던진다(pair #22).
-/// (broadcast 컨트롤러는 리스너 예외를 add 호출자가 아니라 구독 Zone으로 보내므로 add를 감싸서는 잡을 수 없다 — 실측.)
+/// 요청 스트림 래퍼: 사용자 onData가 동기적으로 throw하면 해당 요청을 폴백 응답하고 예외를 다시 던진다.
+/// (broadcast 컨트롤러는 리스너 예외를 add 호출자가 아니라 구독 Zone으로 보내므로 add를 감싸서는 잡을 수 없다.)
 class _GuardedRequestStream<T> extends Stream<T> {
   _GuardedRequestStream(this._source, this._onListenerError);
 

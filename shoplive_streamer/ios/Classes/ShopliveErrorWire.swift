@@ -33,6 +33,7 @@ enum ShopliveErrorWire {
         case .failedToStartOSPip: code = "FAILED_TO_START_OS_PIP"
         case .failedNetwork: code = "FAILED_NETWORK"
         case .failedJSONParsing: code = "FAILED_JSON_PARSING"
+        case .previewIgnoredWhileViewing: code = "PREVIEW_IGNORED_WHILE_VIEWING" // 9520, SDK 3.0.6 (SMV-2021 D3)
         case .unexpectedError: code = "UNEXPECTED_ERROR"
         case .unknown(let raw):
             code = "UNKNOWN"

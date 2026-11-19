@@ -1,6 +1,6 @@
 /// Shoplive 방송(streamer) Flutter 플러그인 — Android `cloud.shoplive:shoplive-streamer-sdk` · iOS `ShopliveStreamerSDK`(버전은 README).
 ///
-/// 채널 계약: design.md rev2 §2.4·§2.5 (DRAFT-flutter-sdk-302-android). shoplive_core API를 함께 export한다.
+/// shoplive_core API를 함께 export한다.
 library shoplive_streamer;
 
 export 'package:shoplive_core/shoplive_core.dart';

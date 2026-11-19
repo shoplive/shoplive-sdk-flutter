@@ -15,7 +15,7 @@ abstract final class ShopliveCoreContract {
   static const List<String> methods = [initialize, setUser, setStreamToken, logout, sendConversionEvent, getSdkVersion];
 }
 
-/// 채널 `shoplive_core` 구현(design.md rev2 §2.4). PlatformException은 그대로 전파한다.
+/// 채널 `shoplive_core` 구현. PlatformException은 그대로 전파한다.
 class MethodChannelShopliveCore extends ShopliveCorePlatform {
   @visibleForTesting
   final MethodChannel methodChannel = const MethodChannel(channelName);

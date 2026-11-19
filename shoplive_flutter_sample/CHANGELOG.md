@@ -1,3 +1,41 @@
+### What's changed
+This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can stay muted when the viewer expands them, `startPreview` with another key switches the campaign in the same window on iOS too, and playback fixes from both native SDKs are included. Android SDK 3.0.7 changes are included as well ([release notes](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.7)); if your app also calls the Android SDK from native code, rebuild that code against 3.0.8.
+
+### Breaking
+* `ShoplivePipRatio` has a new value, `auto`. A `switch` over `ShoplivePipRatio` without a `default` (or `_`) case must add it.
+* `startPreview` can now fail where 3.0.4 completed: while a broadcast is being watched (both platforms) and, on iOS, before `Shoplive.initialize`. Its `Future` ends with `PlatformException(code: 'SDK_ERROR')`, so wrap the call in `try` / `catch` if you did not already.
+* Code that `implements` `ShopliveSoundOptions` or `ShoplivePlayer` (for example a test double) must add `muteOnFullScreen` and the new `muteOnFullScreen` parameter of `startPreview`.
+
+### Added
+* `startPreview(campaignKey, muteOnFullScreen: true)` keeps a preview muted when the viewer expands it to fullscreen; the viewer can unmute it. `ShopliveSoundOptions.muteOnFullScreen` does the same for a preview session opened with `start` (`type: preview`, `presentationStyle: pip`); `startPreview` uses only its own argument. The default `false` unmutes on expand, as before. Android and iOS. If a preview with the same key is already open, the SDK keeps it and ignores the new value; close it and call `startPreview` again to change it.
+* `ShoplivePipRatio.auto`: on Android the in-app PIP window follows the broadcast's aspect ratio. It is the Android default. iOS ignores `aspectRatio`, as before.
+
+### Changed
+* iOS: `startPreview` with another campaign key now switches the campaign in the open preview window instead of reopening the window, as on Android.
+* Calling `startPreview` while a broadcast is being watched now fails with `SDK_ERROR` and the error `PREVIEW_IGNORED_WHILE_VIEWING` (9520) in `details`; the broadcast keeps playing. 3.0.4 ignored the call without an error. Read it with `ShopliveError.tryParse(e.details)`.
+* Calling `startPreview` before `Shoplive.initialize`: iOS now fails with `SDK_ERROR` and `NOT_INITIALIZED_ACCESS_KEY` (9000) in `details` (3.0.4 opened a window that closed again without an error). Android fails with `SDK_ERROR` without `details`, as before.
+* `play` with the campaign that is already on screen is ignored and sends no events. To start it over, call `stop` and then `play`, or `reload`. Android and iOS.
+* iOS: `reload()` no longer sends `closed` before `loading`; the session continues with `loading` and then `playing`.
+* `ShopliveResizeMode.auto` now works on iOS too: fit in a tablet-sized window, fill otherwise. A new player starts in `auto` on both platforms and `getResizeMode()` returns `auto` (iOS 3.0.4: `fill`). Set `fill` to keep the previous look on iPad.
+* Android: the in-app PIP window follows the broadcast's aspect ratio by default (3.0.4: 9:16), always fills its window, and appears only after the broadcast loads. If that first load fails or times out, the window does not open and `events` delivers an `error` with `FAILED_NETWORK` (recoverable); call `start` again.
+* Android: for a landscape broadcast, `pip.scale` sets the height of the in-app PIP window.
+* Android: `isMuted()` now reflects the mute button in the player and the volume keys.
+* `ShoplivePlayOptions.keepWindowStateOnPlayExecuted` keeps the current form (fullscreen or PIP) when `play` switches to a different campaign. Android and iOS. iOS: during system PIP, the new campaign now plays in the same PIP window at once instead of waiting until the user returns to the app.
+
+### Error codes
+| When | Before (3.0.4) | Now (3.0.5) | What to do |
+| --- | --- | --- | --- |
+| `startPreview` while a broadcast is being watched | No error, call ignored | `SDK_ERROR`, `details` code `PREVIEW_IGNORED_WHILE_VIEWING` (9520), not recoverable | Handle it, or keep the broadcast as is |
+| iOS: `startPreview` before `Shoplive.initialize` | No error | `SDK_ERROR`, `details` code `NOT_INITIALIZED_ACCESS_KEY` (9000) | Call `Shoplive.initialize` first |
+| Android: in-app PIP first load fails or times out | — | `error` event `FAILED_NETWORK` (9900), recoverable | Call `start` again |
+
+### Fixed
+* Android: audio no longer keeps playing for a few seconds after the fullscreen player is closed while your app's screen is still resuming.
+* Android: if another app played audio while the player was in PIP, the broadcast no longer stays paused or silent when you return to it, and reopening the app no longer leaves a stopped PIP window.
+* Android 14 and later: entering PIP from fullscreen no longer fails, and closing a player expanded from PIP returns to your app instead of the home screen.
+* Android: video no longer stretches on foldables or in landscape broadcasts, and the fit after folding or unfolding matches the screen.
+* iOS: landscape broadcasts expand from a preview without a flicker, and a PIP window no longer shows a stale frame when another campaign replaces it. The poster shown before a broadcast now matches the broadcast state.
+
 ## 3.0.4
 
 Built on Shoplive Android SDK 3.0.6 and iOS SDK 3.0.5. Native SDK release notes: [Android](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.6) · [iOS](https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.5).

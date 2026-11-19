@@ -38,7 +38,8 @@ class ShoplivePlayerPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodC
         val handler = PlayerMethodHandler<Activity>(
             registry = registry,
             portFactory = { activity -> SdkPlayerPort(ShoplivePlayer(activity)) },
-            previewLauncher = { activity, key -> SdkPlayerPort(ShoplivePlayer.startPreview(activity, key)) },
+            previewLauncher = { activity, key, muteOnFullScreen -> SdkPlayerPort(ShoplivePlayer.startPreview(activity, key, muteOnFullScreen)) },
+            scheduler = scheduler,
             liveDelegate = { PlayerDelegateBridge(attach, generation, scheduler, events, requests, registry) },
             drawableId = drawableResolver(binding.applicationContext),
         )
@@ -90,7 +91,14 @@ class ShoplivePlayerPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodC
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        if (call.method == PlayerContract.GET_CAMPAIGNS) return beginCampaignList(call, result)
+        when (call.method) {
+            PlayerContract.GET_CAMPAIGNS -> return beginDeferred(call, result) { args, reply ->
+                (campaigns ?: throw BridgeStateException(BridgeErrorCode.SDK_ERROR, DETACHED_MESSAGE)).begin(args, reply)
+            }
+            PlayerContract.START_PREVIEW -> return beginDeferred(call, result) { args, reply ->
+                (handler ?: throw BridgeStateException(BridgeErrorCode.SDK_ERROR, DETACHED_MESSAGE)).beginStartPreview(args, reply)
+            }
+        }
         Bridge.safeCall(TAG, call.method, result) {
             if (call.method == PlayerContract.CANCEL_GET_CAMPAIGNS) {
                 val c = campaigns ?: throw BridgeStateException(BridgeErrorCode.SDK_ERROR, DETACHED_MESSAGE)
@@ -102,13 +110,13 @@ class ShoplivePlayerPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodC
     }
 
     /**
-     * getCampaigns만 회신을 SDK 콜백 때 보낸다(SMV-1899 D10-e). 등록 전에 난 오류는 safeCall에 다시 던져 같은 분류(INVALID_ARGUMENT·
-     * SDK_ERROR, VM Error는 전파)로 1번 회신한다 — 공유 사본 BridgeSupport.kt에 지연 회신 경로를 더하지 않는다.
+     * 회신을 나중에 보내는 메서드 — getCampaigns(SDK 콜백 때, SMV-1899 D10-e)·startPreview(판정 홉 뒤, SMV-2021 D3). [begin]이 회신을 맡고,
+     * 등록 전에 난 오류만 던진다 — safeCall에 다시 던져 같은 분류(INVALID_ARGUMENT·SDK_ERROR, VM Error는 전파)로 1번 회신한다.
+     * 공유 사본 BridgeSupport.kt에 지연 회신 경로를 더하지 않는다.
      */
-    private fun beginCampaignList(call: MethodCall, result: MethodChannel.Result) {
+    private inline fun beginDeferred(call: MethodCall, result: MethodChannel.Result, begin: (Args, MethodChannel.Result) -> Unit) {
         try {
-            val c = campaigns ?: throw BridgeStateException(BridgeErrorCode.SDK_ERROR, DETACHED_MESSAGE)
-            c.begin(Args.of(call.arguments), result)
+            begin(Args.of(call.arguments), result)
         } catch (t: Throwable) {
             Bridge.safeCall(TAG, call.method, result) { throw t }
         }

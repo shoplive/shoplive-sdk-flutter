@@ -2,7 +2,7 @@ import 'package:meta/meta.dart';
 import '../wire.dart' as wire;
 import 'player_enums.dart';
 
-/// start/play 옵션. null 필드는 SDK 기본값(design §2.4 PlayOptions).
+/// start/play 옵션. null 필드는 SDK 기본값.
 class ShoplivePlayOptions {
   const ShoplivePlayOptions({this.referrer, this.keepWindowStateOnPlayExecuted, this.presentationStyle});
 

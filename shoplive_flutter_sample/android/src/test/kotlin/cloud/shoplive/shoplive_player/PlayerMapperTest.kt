@@ -241,6 +241,21 @@ class PlayerMapperTest {
         assertEquals(current.appearance.chatInputTypeface, merged.appearance.chatInputTypeface)
     }
 
+    @Test // SMV-2021 D1·D4: SDK 3.0.7 기본 aspectRatio AUTO가 unknown 이 아니고, muteOnFullScreen 병합·왕복
+    fun pipRatioAuto_andMuteOnFullScreen_roundTrip() {
+        val current = ShoplivePlayerConfiguration()
+        assertEquals(ShoplivePipRatio.AUTO, current.pip.aspectRatio)
+        val wire = PlayerMapper.configurationToWire(current)
+        assertEquals("auto", (wire["pip"] as Map<*, *>)["aspectRatio"])
+        assertEquals(false, (wire["sound"] as Map<*, *>)["muteOnFullScreen"])
+        val merged = merge(current, Args.of(mapOf("pip" to mapOf("aspectRatio" to "ratio1x1"), "sound" to mapOf("muteOnFullScreen" to true))))
+        assertEquals(ShoplivePipRatio.RATIO_1X1, merged.pip.aspectRatio)
+        assertEquals(true, merged.sound.muteOnFullScreen)
+        val back = merge(merged, Args.of(mapOf("pip" to mapOf("aspectRatio" to "auto"), "sound" to mapOf("muteOnStart" to true))))
+        assertEquals(ShoplivePipRatio.AUTO, back.pip.aspectRatio)
+        assertEquals(true, back.sound.muteOnFullScreen) // 생략 = 현재 값 유지
+    }
+
     @Test // case: CFG-01
     fun merge_overPreviouslyMerged_accumulates() {
         val first = merge(ShoplivePlayerConfiguration(), Args.of(mapOf("pip" to mapOf("isInAppPipEnabled" to true))))

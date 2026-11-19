@@ -13,12 +13,10 @@ enum PlayerMapper {
     static let connectionState: [String: ShopliveConnectionState] = [
         "connecting": .connecting, "connected": .connected, "reconnecting": .reconnecting, "disconnected": .disconnected,
     ]
-    /// Output (getResizeMode): one wire name per value - wireOf scans an unordered Dictionary (BridgeCore.swift:320-322), so a
-    /// second key for .fill would make the reply nondeterministic.
-    static let resizeMode: [String: ShopliveResizeMode] = ["fill": .fill, "fit": .fit]
-    /// Input (setResizeMode). "default" is Dart ShopliveResizeMode.auto = Android SDK 3.0.6 DEFAULT (window-size judgement); the
-    /// iOS SDK has no such mode, so it is applied as .fill, the iOS default (SMV-1899 D9).
-    static let resizeModeInput: [String: ShopliveResizeMode] = ["fill": .fill, "fit": .fit, "default": .fill]
+    /// setResizeMode and getResizeMode. One wire name per value - wireOf scans an unordered Dictionary (BridgeCore.swift:320-322).
+    /// "default" is Dart ShopliveResizeMode.auto = iOS SDK 3.0.6 .default (fit in a tablet-sized window, fill otherwise; the SDK
+    /// default) - same wire as Android DEFAULT (SMV-1899 D9, SMV-2021 D5).
+    static let resizeMode: [String: ShopliveResizeMode] = ["default": .default, "fill": .fill, "fit": .fit]
     static let overlayUI: [String: ShopliveOverlayUIMode] = ["builtIn": .builtIn, "hidden": .hidden]
     static let presentationStyle: [String: ShoplivePlayerPresentationStyle] = ["fullscreen": .fullScreen, "pip": .pip]
     static let pipPosition: [String: ShoplivePipPosition] = [
@@ -36,7 +34,7 @@ enum PlayerMapper {
     /// Contract values validated but without an iOS counterpart (D-2 type is mapped to presets, D-3 aspectRatio ignored).
     static let playerType: [String: String] = ["live": "live", "preview": "preview"]
     static let pipRatio: [String: String] = [
-        "ratio1x1": "ratio1x1", "ratio1x2": "ratio1x2", "ratio2x3": "ratio2x3", "ratio3x4": "ratio3x4", "ratio9x16": "ratio9x16",
+        "ratio1x1": "ratio1x1", "ratio1x2": "ratio1x2", "ratio2x3": "ratio2x3", "ratio3x4": "ratio3x4", "ratio9x16": "ratio9x16", "auto": "auto",
     ]
     static let defaultType = "live"
 
@@ -95,6 +93,7 @@ enum PlayerMapper {
         if let sound = try partial.optArgs("sound") {
             if let v = try nonNullBool(sound, "muteOnStart") { config.sound.muteOnStart = v }
             if let v = try nonNullBool(sound, "mixWithOthers") { config.sound.mixWithOthers = v }
+            if let v = try nonNullBool(sound, "muteOnFullScreen") { config.sound.muteOnFullScreen = v } // SDK 3.0.6 (SMV-2021 D1)
         }
         if let appearance = try partial.optArgs("appearance") {
             if let v = try nonNullInt(appearance, "indicatorColor") {
@@ -171,7 +170,7 @@ enum PlayerMapper {
                 "padding": ["left": Int(c.pip.padding.left), "top": Int(c.pip.padding.top),
                             "right": Int(c.pip.padding.right), "bottom": Int(c.pip.padding.bottom)],
             ] as [String: Any],
-            "sound": ["muteOnStart": c.sound.muteOnStart, "mixWithOthers": c.sound.mixWithOthers],
+            "sound": ["muteOnStart": c.sound.muteOnStart, "mixWithOthers": c.sound.mixWithOthers, "muteOnFullScreen": c.sound.muteOnFullScreen],
             "appearance": ["indicatorColor": argb(c.appearance.indicatorColor)],
             "navigation": ["actionOnNavigation": wireOf(c.navigation.actionOnNavigation, navigationAction),
                            "shareScheme": c.navigation.shareScheme as Any? ?? NSNull(),

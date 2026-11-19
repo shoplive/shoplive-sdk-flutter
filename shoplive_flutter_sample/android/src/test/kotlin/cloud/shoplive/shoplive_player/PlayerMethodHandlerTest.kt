@@ -8,7 +8,10 @@ import cloud.shoplive.player.ShopliveCustomActionResult
 import cloud.shoplive.player.ShopliveOverlayUIMode
 import cloud.shoplive.player.ShoplivePlayOptions
 import cloud.shoplive.player.ShoplivePlayerConfiguration
+import cloud.shoplive.core.publicsurface.ShopliveError
+import cloud.shoplive.core.publicsurface.ShopliveErrorCode
 import cloud.shoplive.player.ShoplivePlayerDelegate
+import cloud.shoplive.player.ShoplivePlayerEvent
 import cloud.shoplive.player.ShoplivePlayerPresentationStyle
 import cloud.shoplive.player.ShoplivePlayerState
 import cloud.shoplive.player.ShoplivePlayerType
@@ -80,14 +83,15 @@ class PlayerMethodHandlerTest {
     }
     private var nextRunning = false
     private var nextFailure: RuntimeException? = null
-    /** startPreview 대역: SDK ShoplivePlayer.startPreview가 돌려줄 인스턴스(호스트·키를 기록). */
-    private val previewCalls = mutableListOf<Pair<String, String>>()
+    /** startPreview 대역: SDK ShoplivePlayer.startPreview가 돌려줄 인스턴스(호스트·키·muteOnFullScreen을 기록). */
+    private val previewCalls = mutableListOf<Triple<String, String, Boolean>>()
     private val previewReturned = mutableListOf<FakePort>()
     private var nextPreview: () -> FakePort = { FakePort(running = true).also { it.inPip = true } }
     private val handler = PlayerMethodHandler<String>(
         registry = registry,
         portFactory = { host -> FakePort(nextRunning).also { it.startFailure = nextFailure; created += host to it } },
-        previewLauncher = { host, key -> previewCalls += host to key; nextPreview().also { previewReturned += it } },
+        previewLauncher = { host, key, mute -> previewCalls += Triple(host, key, mute); nextPreview().also { previewReturned += it } },
+        scheduler = scheduler,
         liveDelegate = { liveDelegate },
         drawableId = { null },
     )
@@ -402,7 +406,7 @@ class PlayerMethodHandlerTest {
         assertEquals(listOf(cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Closed(ShopliveCloseReason.APP_REQUEST))), liveEvents)
         // 교체할 세션이 없던 첫 start 실패는 closed를 보내지 않는다
         val fresh = PlayerMethodHandler<String>(
-            registry, { FakePort().also { it.startFailure = IllegalStateException("sdk") } }, { _, _ -> FakePort() }, { liveDelegate }, { null },
+            registry, { FakePort().also { it.startFailure = IllegalStateException("sdk") } }, { _, _, _ -> FakePort() }, scheduler, { liveDelegate }, { null },
         )
         liveEvents.clear()
         fresh.attachHost("A1")
@@ -418,73 +422,209 @@ class PlayerMethodHandlerTest {
         assertEquals("live", (call("getConfiguration") as Map<*, *>)["type"])
     }
 
-    // ---- startPreview(SMV-1899 D11 — SDK ShoplivePlayer.startPreview가 돌려준 인스턴스를 동일성으로 판단해 채택) ----
+    // ---- startPreview(SMV-1899 D11, SMV-2021 D3·D7 — SDK가 돌려준 인스턴스를 동일성·시작 여부로 가르고, 시작 안 된 새 인스턴스는 1홉 뒤 판정) ----
 
-    @Test // case: S-8 (R6-A6) — 호스트가 없으면 SDK를 부르지 않고 NO_HOST_SCREEN
-    fun startPreview_noHost_isNoHostScreen_withoutSdkCall() {
-        assertEquals(BridgeErrorCode.NO_HOST_SCREEN, stateCode { call("startPreview", mapOf("campaignKey" to "k")) })
-        assertEquals(emptyList<Any>(), previewCalls)
+    /** 플러그인과 같은 지연 회신 경로: 등록 전 오류는 던지고(플러그인이 safeCall로 1번 회신), 그 밖의 회신은 핸들러가 보낸다. */
+    private fun startPreview(args: Map<String, Any?>): RecordingResult = RecordingResult().also { handler.beginStartPreview(Args.of(args), it) }
+
+    /** SDK 3.0.8 IGNORE_VIEWING·미초기화 모사: 시작 안 된 새 인스턴스를 돌려주고, 거부 통지를 반환 전에 메인 큐에 넣는다(ShoplivePlayer.kt:1634). */
+    private fun unstartedWithNotice(code: ShopliveErrorCode?, rawCode: Int = 0): () -> FakePort = {
+        FakePort().also { p ->
+            if (code != null) scheduler.post { p.delegate?.onEvent(p, ShoplivePlayerEvent.Error(ShopliveError(code, rawCode, "refused $rawCode", null, false))) }
+        }
     }
 
-    @Test // case: S-5 (R6-A6, D11-d) — 빈·공백 키는 SDK를 부르기 전에 INVALID_ARGUMENT(SDK의 빈 키 오류는 반환 전에 나가 받을 수 없다)
+    @Test // case: P-14 (S-8) — 호스트가 없으면 SDK를 부르지 않고 NO_HOST_SCREEN(던짐 = 플러그인이 1번 회신)
+    fun startPreview_noHost_isNoHostScreen_withoutSdkCall() {
+        val r = RecordingResult()
+        val e = assertThrows(BridgeStateException::class.java) { handler.beginStartPreview(Args.of(mapOf("campaignKey" to "k")), r) }
+        assertEquals(BridgeErrorCode.NO_HOST_SCREEN, e.code)
+        assertEquals(emptyList<Any>(), previewCalls)
+        assertEquals(emptyList<String>(), r.calls)
+    }
+
+    @Test // case: P-13 (S-5, D11-d) — 빈·공백 키는 SDK를 부르기 전에 INVALID_ARGUMENT(SDK의 빈 키 오류는 반환 전에 나가 받을 수 없다)
     fun startPreview_blankKey_isInvalid_withoutSdkCall() {
         handler.attachHost("A1")
         for (key in listOf("", "  ")) {
-            assertThrows(BridgeArgumentException::class.java) { call("startPreview", mapOf("campaignKey" to key)) }
+            assertThrows(BridgeArgumentException::class.java) { startPreview(mapOf("campaignKey" to key)) }
         }
         assertEquals(emptyList<Any>(), previewCalls)
     }
 
-    @Test // case: S-1·S-9 (R6-A6) — 포트가 없을 때 SDK가 띄운 새 인스턴스를 채택: live delegate, 보관 설정 미적용, 현재 상태 1회 보충
+    @Test // case: P-16 — muteOnFullScreen이 bool이 아니면 SDK를 부르기 전에 INVALID_ARGUMENT(key muteOnFullScreen), 세션 불변
+    fun startPreview_muteOnFullScreenNotBool_isInvalid_withoutSdkCall() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        val e = assertThrows(BridgeArgumentException::class.java) { startPreview(mapOf("campaignKey" to "p", "muteOnFullScreen" to "x")) }
+        assertEquals("muteOnFullScreen", e.key)
+        assertEquals(emptyList<Any>(), previewCalls)
+        assertEquals(true, call("isRunning"))
+    }
+
+    @Test // case: P-15·P-16 — muteOnFullScreen true/false/생략(null 포함 = false)을 SDK startPreview에 그대로 넘긴다
+    fun startPreview_passesMuteOnFullScreen_toLauncher() {
+        handler.attachHost("A1")
+        startPreview(mapOf("campaignKey" to "a", "muteOnFullScreen" to true))
+        startPreview(mapOf("campaignKey" to "b", "muteOnFullScreen" to false))
+        startPreview(mapOf("campaignKey" to "c"))
+        startPreview(mapOf("campaignKey" to "d", "muteOnFullScreen" to null))
+        assertEquals(listOf(Triple("A1", "a", true), Triple("A1", "b", false), Triple("A1", "c", false), Triple("A1", "d", false)), previewCalls)
+    }
+
+    @Test // case: P-01·T-07·S-01 — 시작된 새 인스턴스를 채택: live delegate, 보관 설정 미적용, 현재 상태 1회 보충, 동기 success 1번(홉 없음)
     fun startPreview_newInstance_isAdopted_withStateOnce() {
         call("setResizeMode", mapOf("mode" to "fit"))
         call("setConfiguration", mapOf("configuration" to mapOf("sound" to mapOf("muteOnStart" to false))))
         handler.attachHost("A1")
-        assertNull(call("startPreview", mapOf("campaignKey" to "p")))
-        assertEquals(listOf("A1" to "p"), previewCalls)
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        assertEquals(listOf("success"), r.calls)
+        assertNull(r.value)
+        assertEquals(emptyList<Runnable>(), scheduler.posted)
+        assertEquals(listOf(Triple("A1", "p", false)), previewCalls)
         val preview = lastPreview()
         assertSame(liveDelegate, preview.delegate)
         assertEquals(ShopliveResizeMode.DEFAULT, preview.resizeMode) // SDK 프리셋 그대로(보관값은 다음 start용)
         assertEquals(emptyList<String>(), preview.calls)
-        assertEquals(listOf<Any>(cloud.shoplive.player.ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Playing)), liveEvents) // SDK가 반환 전에 낸 상태를 1회 보충(St-a)
+        assertEquals(listOf<Any>(ShoplivePlayerEvent.StateChanged(ShoplivePlayerState.Playing)), liveEvents) // SDK가 반환 전에 낸 상태를 1회 보충(St-a)
         assertEquals("playing", call("getState"))
         assertEquals(true, call("isInPictureInPicture"))
     }
 
-    @Test // case: S-2·S-3·S-4 (R6-A6) — SDK가 지금 port와 같은 인스턴스를 돌려주면(재사용·같은 인스턴스 재시작·시청 중 무시) 아무것도 바꾸지 않는다
+    @Test // case: P-03·P-05 — SDK가 지금 port와 같은 인스턴스를 돌려주면(REUSE·RESTART_HELD) 아무것도 바꾸지 않고 동기 success 1번
     fun startPreview_sameInstance_changesNothing() {
         handler.attachHost("A1")
         call("start", mapOf("campaignKey" to "k"))
         val running = port()
         nextPreview = { running }
-        assertNull(call("startPreview", mapOf("campaignKey" to "p")))
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        assertEquals(listOf("success"), r.calls)
+        assertEquals(emptyList<Runnable>(), scheduler.posted)
         assertSame(liveDelegate, running.delegate)
         call("stop") // port가 그대로 running인지 공개 경로로 확인
         assertEquals(listOf("start2", "stop"), running.calls)
         assertEquals(emptyList<Any>(), liveEvents)
     }
 
-    @Test // case: S-10 (R6-A6) — 다른 인스턴스로 바뀌면 이전 port는 retire(DetachedDelegate·대기 요청 폴백·실행 중이면 close) 후 채택
+    @Test // case: P-17 (S-10) — 다른 인스턴스로 바뀌면 이전 port는 retire(DetachedDelegate·대기 요청 폴백·실행 중이면 close) 후 채택
     fun startPreview_otherInstance_retiresPreviousPort() {
         handler.attachHost("A1")
         call("start", mapOf("campaignKey" to "k"))
         val old = port()
         val coupons = mutableListOf<cloud.shoplive.player.ShopliveCouponResult>()
         registry.register(PendingRequest.Coupon("c1") { coupons += it })
-        call("startPreview", mapOf("campaignKey" to "p"))
+        assertEquals(listOf("success"), startPreview(mapOf("campaignKey" to "p")).calls)
         assertSame(DetachedDelegate, old.delegate)
         assertEquals(listOf("start2", "close"), old.calls)
         assertEquals(1, coupons.size) // 이전 세션 대기 요청은 폴백 1회
         assertSame(liveDelegate, lastPreview().delegate)
     }
 
-    @Test // case: S-6 (R6-A6) — SDK가 시작하지 않은 새 인스턴스를 돌려주면(미초기화·진입 거부) SDK_ERROR, 지금 세션은 그대로
-    fun startPreview_notStarted_isSdkError_currentSessionKept() {
+    @Test // case: P-07·T-02·S-02 (D3) — 시청 중: 시작 안 된 새 인스턴스 + 다음 루프의 9520 → 홉에서 SDK_ERROR + ShopliveError details 1번, 시청 세션 불변
+    fun startPreview_whileViewing_failsWith9520Details_afterHop_sessionKept() {
         handler.attachHost("A1")
         call("start", mapOf("campaignKey" to "k"))
         val running = port()
-        nextPreview = { FakePort() }
-        assertEquals(BridgeErrorCode.SDK_ERROR, stateCode { call("startPreview", mapOf("campaignKey" to "p")) })
+        nextPreview = unstartedWithNotice(ShopliveErrorCode.PREVIEW_IGNORED_WHILE_VIEWING, 9520)
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        assertEquals(emptyList<String>(), r.calls) // 홉 전에는 회신하지 않는다
+        scheduler.runPosted() // SDK 통지(먼저 post) → 브릿지 홉(FIFO)
+        assertEquals(listOf("error"), r.calls)
+        assertEquals(BridgeErrorCode.SDK_ERROR, r.errorCode)
+        assertEquals("refused 9520", r.errorMessage)
+        assertEquals(
+            mapOf("code" to "PREVIEW_IGNORED_WHILE_VIEWING", "message" to "refused 9520", "rawCode" to 9520, "recoverable" to false),
+            r.errorDetails,
+        )
+        assertSame(liveDelegate, running.delegate)
+        assertSame(DetachedDelegate, lastPreview().delegate) // 판정 뒤 버린 인스턴스의 늦은 통지는 Dart로 가지 않는다
+        assertEquals(true, call("isRunning"))
+        assertEquals(listOf("start2"), running.calls)
+        assertEquals(emptyList<Any>(), liveEvents) // events error로 두 번 내지 않는다(한 경로)
+        scheduler.runPosted()
+        assertEquals(listOf("error"), r.calls)
+    }
+
+    @Test // case: P-11·S-02 (D7) — 시작 안 된 새 인스턴스 + 통지 없음(Android 미초기화·진입 거부) → 홉에서 details 없는 SDK_ERROR 1번, 세션 불변
+    fun startPreview_notStarted_withoutNotice_isSdkErrorWithoutDetails_afterHop() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        val running = port()
+        nextPreview = unstartedWithNotice(null)
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        assertEquals(emptyList<String>(), r.calls)
+        scheduler.runPosted()
+        assertEquals(listOf("error"), r.calls)
+        assertEquals(BridgeErrorCode.SDK_ERROR, r.errorCode)
+        assertNull(r.errorDetails)
+        assertSame(liveDelegate, running.delegate)
+        assertEquals(true, call("isRunning"))
+        assertEquals(emptyList<Any>(), liveEvents)
+    }
+
+    @Test // case: P-11 (D7) — SDK가 9000을 다음 루프로 옮기면 코드 변경 없이 details로 전달된다(거부 코드 집합 = iOS와 같다)
+    fun startPreview_notInitializedNotice_isSdkErrorWith9000Details() {
+        handler.attachHost("A1")
+        nextPreview = unstartedWithNotice(ShopliveErrorCode.NOT_INITIALIZED_ACCESS_KEY, 9000)
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        scheduler.runPosted()
+        assertEquals(listOf("error"), r.calls)
+        assertEquals("NOT_INITIALIZED_ACCESS_KEY", (r.errorDetails as Map<*, *>)["code"])
+        assertEquals(9000, (r.errorDetails as Map<*, *>)["rawCode"])
+        assertEquals("idle", call("getState"))
+    }
+
+    @Test // case: S-02 — 거부 코드가 아닌 오류 통지는 판정에 쓰지 않는다(details 없는 SDK_ERROR)
+    fun startPreview_otherErrorNotice_isNotTakenAsRejection() {
+        handler.attachHost("A1")
+        nextPreview = unstartedWithNotice(ShopliveErrorCode.FAILED_NETWORK, 9900)
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        scheduler.runPosted()
+        assertEquals(listOf("error"), r.calls)
+        assertNull(r.errorDetails)
+    }
+
+    @Test // case: T-05·S-01 — 홉 전에 엔진이 detach되면 회신 0번, 인스턴스는 DetachedDelegate
+    fun startPreview_engineDetachedBeforeHop_repliesNever() {
+        handler.attachHost("A1")
+        nextPreview = unstartedWithNotice(ShopliveErrorCode.PREVIEW_IGNORED_WHILE_VIEWING, 9520)
+        val r = startPreview(mapOf("campaignKey" to "p"))
+        val preview = lastPreview()
+        handler.onEngineDetached()
+        assertSame(DetachedDelegate, preview.delegate)
+        scheduler.runPosted()
+        assertEquals(emptyList<String>(), r.calls)
+    }
+
+    @Test // case: S-01 — 대기 중인 두 호출은 각자 1번씩 회신한다
+    fun startPreview_twoPending_eachRepliesOnce() {
+        handler.attachHost("A1")
+        nextPreview = unstartedWithNotice(ShopliveErrorCode.PREVIEW_IGNORED_WHILE_VIEWING, 9520)
+        val first = startPreview(mapOf("campaignKey" to "p"))
+        nextPreview = unstartedWithNotice(null)
+        val second = startPreview(mapOf("campaignKey" to "q"))
+        scheduler.runPosted()
+        assertEquals(listOf("error"), first.calls)
+        assertEquals(9520, (first.errorDetails as Map<*, *>)["rawCode"])
+        assertEquals(listOf("error"), second.calls)
+        assertNull(second.errorDetails)
+    }
+
+    @Test // case: X-7·P-07·S-01 — 시청 중 연타: 두 호출 모두 각자 SDK_ERROR + 9520 details로 1번씩, 시청 세션 불변
+    fun startPreview_whileViewing_repeated_eachFailsOnceWith9520() {
+        handler.attachHost("A1")
+        call("start", mapOf("campaignKey" to "k"))
+        val running = port()
+        nextPreview = unstartedWithNotice(ShopliveErrorCode.PREVIEW_IGNORED_WHILE_VIEWING, 9520)
+        val first = startPreview(mapOf("campaignKey" to "p"))
+        val second = startPreview(mapOf("campaignKey" to "p"))
+        scheduler.runPosted()
+        for (r in listOf(first, second)) {
+            assertEquals(listOf("error"), r.calls)
+            assertEquals(BridgeErrorCode.SDK_ERROR, r.errorCode)
+            assertEquals("PREVIEW_IGNORED_WHILE_VIEWING", (r.errorDetails as Map<*, *>)["code"])
+            assertEquals(9520, (r.errorDetails as Map<*, *>)["rawCode"])
+        }
         assertSame(liveDelegate, running.delegate)
         assertEquals(true, call("isRunning"))
         assertEquals(emptyList<Any>(), liveEvents)
@@ -493,7 +633,7 @@ class PlayerMethodHandlerTest {
     @Test // case: S-14 (R6-A6) — 채택한 프리뷰가 있어도 start는 기존 규칙대로 그 인스턴스를 retire하고 새로 만든다
     fun start_afterPreview_retiresPreview() {
         handler.attachHost("A1")
-        call("startPreview", mapOf("campaignKey" to "p"))
+        startPreview(mapOf("campaignKey" to "p"))
         val preview = lastPreview()
         call("start", mapOf("campaignKey" to "k"))
         assertSame(DetachedDelegate, preview.delegate)
@@ -564,7 +704,7 @@ class PlayerMethodHandlerTest {
     fun setConfiguration_resolvesEachImageNameOncePerCall() {
         val asked = mutableListOf<String>()
         val h = PlayerMethodHandler<String>(
-            registry, portFactory = { FakePort() }, previewLauncher = { _, _ -> FakePort() }, liveDelegate = { liveDelegate }, drawableId = { asked += it; null },
+            registry, portFactory = { FakePort() }, previewLauncher = { _, _, _ -> FakePort() }, scheduler = scheduler, liveDelegate = { liveDelegate }, drawableId = { asked += it; null },
         )
         h.attachHost("A1")
         h.handle("start", Args.of(mapOf("campaignKey" to "k")))
@@ -692,7 +832,8 @@ class PlayerMethodHandlerTest {
     private val bridged = PlayerMethodHandler<String>(
         registry = registry,
         portFactory = { host -> FakePort(nextRunning).also { it.startFailure = nextFailure; created += host to it } },
-        previewLauncher = { _, _ -> FakePort() },
+        previewLauncher = { _, _, _ -> FakePort() },
+        scheduler = scheduler,
         liveDelegate = { PlayerDelegateBridge(gen, gen.current, scheduler, bridgeEvents, bridgeRequests, registry) },
         drawableId = { null },
     )

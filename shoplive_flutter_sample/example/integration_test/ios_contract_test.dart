@@ -21,6 +21,35 @@ void main() {
     expect([err.code, err.rawCode], ['NOT_INITIALIZED_ACCESS_KEY', 9000]);
   });
 
+  // case: P-12, U-3 (SMV-2021 D7) — replaces the SMV-1899 S-7 observation: before initialize the SDK 3.0.6 refuses the preview
+  // (9000 on the next main run loop) and the Future ends once with SDK_ERROR carrying it. Nothing opens, and the refusal is the
+  // call's result only - it is not also sent as an error event.
+  testWidgets('startPreview before initialize ends with SDK_ERROR NOT_INITIALIZED_ACCESS_KEY and opens nothing', (_) async {
+    final errors = <ShopliveError>[];
+    final sub = player.events.listen((e) {
+      if (e is ShoplivePlayerErrorEvent) errors.add(e.error);
+    });
+    final e = await player.startPreview('not-initialized-key').then<PlatformException?>((_) => null, onError: (Object e) => e as PlatformException);
+    expect(e?.code, 'SDK_ERROR');
+    final err = ShopliveError.tryParse(e!.details)!;
+    expect([err.code, err.rawCode, err.recoverable], ['NOT_INITIALIZED_ACCESS_KEY', 9000, false]);
+    await Future<void>.delayed(const Duration(seconds: 1));
+    expect(await player.isRunning(), isFalse);
+    expect(await player.isInPictureInPicture(), isFalse);
+    expect(await player.getState(), ShoplivePlayerState.idle);
+    expect(errors, isEmpty);
+    await sub.cancel();
+  });
+
+  // case: P-16 (SMV-2021 D1) — muteOnFullScreen is a Bool or omitted; anything else is rejected before the SDK
+  testWidgets('startPreview muteOnFullScreen that is not a Bool is INVALID_ARGUMENT', (_) async {
+    await expectLater(
+      const MethodChannel('shoplive_player').invokeMethod<void>('startPreview', {'campaignKey': 'k', 'muteOnFullScreen': 'x'}),
+      _platformError('INVALID_ARGUMENT'),
+    );
+    expect(await player.isRunning(), isFalse);
+  });
+
   // case: G-6 (R6-I1) — 32-bit page/size like Android, rejected before the SDK call
   testWidgets('getCampaigns page out of 32-bit range is INVALID_ARGUMENT', (_) async {
     await expectLater(ShoplivePlayerAPI.getCampaigns(request: const ShopliveCampaignListRequest(page: 1 << 33)), _platformError('INVALID_ARGUMENT'));
@@ -29,7 +58,7 @@ void main() {
   group('core', () {
     // case: N-01
     testWidgets('getSdkVersion returns the iOS SDK version', (_) async {
-      expect(await Shoplive.getSdkVersion(), '3.0.5');
+      expect(await Shoplive.getSdkVersion(), '3.0.6');
     });
 
     // case: F-04
@@ -55,6 +84,9 @@ void main() {
       expect(await player.isRunning(), isFalse);
       expect(await player.isMuted(), isFalse);
       expect(await player.getCurrentCampaign(), isNull);
+      // case: C-05, C-02 (SMV-2021 D5) — SDK 3.0.6 defaults: resizeMode .default = auto (not unknown), muteOnFullScreen false
+      expect(await player.getResizeMode(), ShopliveResizeMode.auto);
+      expect((await player.getConfiguration()).sound!.muteOnFullScreen, isFalse);
       await player.close();
       await expectLater(player.play('k'), _platformError('NOT_RUNNING'));
       await expectLater(player.setMuted(true), _platformError('NOT_RUNNING'));
@@ -86,9 +118,32 @@ void main() {
       await player.setConfiguration(const ShoplivePlayerConfiguration(type: ShoplivePlayerType.live));
     });
 
-    // case: R-2 (R6-I1, SMV-1899 D9) — auto (wire 'default') is accepted and applied as fill; getResizeMode returns the real value
-    testWidgets('resizeMode auto is applied as fill on iOS', (_) async {
+    // case: C-01, C-04 (SMV-2021 D1·D4) — sound.muteOnFullScreen round-trips (omitted keeps it); pip.aspectRatio auto is accepted
+    // (iOS validates the ratio but does not apply it, so getConfiguration has no aspectRatio)
+    testWidgets('sound.muteOnFullScreen round-trips and pip.aspectRatio auto is accepted', (_) async {
+      await player.setConfiguration(const ShoplivePlayerConfiguration(sound: ShopliveSoundOptions(muteOnFullScreen: true)));
+      expect((await player.getConfiguration()).sound!.muteOnFullScreen, isTrue);
+      await player.setConfiguration(const ShoplivePlayerConfiguration(sound: ShopliveSoundOptions(muteOnStart: false)));
+      expect((await player.getConfiguration()).sound!.muteOnFullScreen, isTrue);
+      await expectLater(
+        const MethodChannel('shoplive_player').invokeMethod<void>('setConfiguration', {
+          'configuration': {
+            'sound': {'muteOnFullScreen': 'yes'},
+          },
+        }),
+        _platformError('INVALID_ARGUMENT'),
+      );
+      await player.setConfiguration(const ShoplivePlayerConfiguration(sound: ShopliveSoundOptions(muteOnFullScreen: false)));
+      expect((await player.getConfiguration()).sound!.muteOnFullScreen, isFalse);
+      await player.setConfiguration(const ShoplivePlayerConfiguration(pip: ShoplivePipOptions(aspectRatio: ShoplivePipRatio.auto)));
+      expect((await player.getConfiguration()).pip!.aspectRatio, isNull);
+    });
+
+    // case: C-05, S-04 (SMV-2021 D5) — auto (wire 'default') is SDK 3.0.6 .default and reads back as auto
+    testWidgets('resizeMode auto stays auto on iOS', (_) async {
       await player.setResizeMode(ShopliveResizeMode.auto);
+      expect(await player.getResizeMode(), ShopliveResizeMode.auto);
+      await player.setResizeMode(ShopliveResizeMode.fill);
       expect(await player.getResizeMode(), ShopliveResizeMode.fill);
       await player.setResizeMode(ShopliveResizeMode.fit);
       expect(await player.getResizeMode(), ShopliveResizeMode.fit);

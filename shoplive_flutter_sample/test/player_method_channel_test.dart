@@ -247,6 +247,31 @@ void main() {
     expect(pip.restoreButton!.isHidden, isNull);
   });
 
+  // SMV-2021 D1·D4 — sound.muteOnFullScreen and pip.aspectRatio auto round trip
+  test('sound.muteOnFullScreen and ShoplivePipRatio.auto toWire / fromWire', () async {
+    await player.setConfiguration(const ShoplivePlayerConfiguration(
+      sound: ShopliveSoundOptions(muteOnFullScreen: true),
+      pip: ShoplivePipOptions(aspectRatio: ShoplivePipRatio.auto),
+    ));
+    expect(calls.single.arguments, {
+      'configuration': {
+        'pip': {'aspectRatio': 'auto'},
+        'sound': {'muteOnFullScreen': true},
+      },
+    });
+    responder = (_) => {
+          'pip': {'aspectRatio': 'auto'},
+          'sound': {'muteOnStart': false, 'mixWithOthers': true, 'muteOnFullScreen': true},
+        };
+    final c = await player.getConfiguration();
+    expect(c.pip!.aspectRatio, ShoplivePipRatio.auto);
+    expect(c.sound!.muteOnFullScreen, isTrue);
+    responder = (_) => {
+          'sound': {'muteOnStart': false},
+        };
+    expect((await player.getConfiguration()).sound!.muteOnFullScreen, isNull);
+  });
+
   // case: B-1 (R6-D1, SMV-1899 D8) — backPressEntersPip와 deprecated 별칭은 한 값, 둘 다 주면 새 이름, wire 키는 3.0.3 이름(W1)
   test('android.backPressEntersPip and the deprecated enterOSPipOnBackPressed alias', () async {
     // ignore: deprecated_member_use_from_same_package
@@ -289,12 +314,32 @@ void main() {
     }
   });
 
-  // case: S-1·S-5 (R6-D9, SMV-1899 D11) — startPreview는 키만 보낸다, 플랫폼 오류(INVALID_ARGUMENT 등)는 그대로
-  test('startPreview sends the campaign key and propagates PlatformException', () async {
+  // case: S-1·S-5 (R6-D9, SMV-1899 D11), P-15·P-16 (SMV-2021 D1) — startPreview는 키와 muteOnFullScreen(생략=false)을 보낸다,
+  // 플랫폼 오류(INVALID_ARGUMENT 등)는 그대로
+  test('startPreview sends the campaign key and muteOnFullScreen, and propagates PlatformException', () async {
     await player.startPreview('p');
-    expect(calls.single.method, 'startPreview');
-    expect(calls.single.arguments, {'campaignKey': 'p'});
+    await player.startPreview('q', muteOnFullScreen: true);
+    await player.startPreview('r', muteOnFullScreen: false);
+    expect(calls.map((c) => c.method).toSet(), {'startPreview'});
+    expect(calls.map((c) => c.arguments).toList(), [
+      {'campaignKey': 'p', 'muteOnFullScreen': false},
+      {'campaignKey': 'q', 'muteOnFullScreen': true},
+      {'campaignKey': 'r', 'muteOnFullScreen': false},
+    ]);
     responder = (_) => throw PlatformException(code: 'INVALID_ARGUMENT');
     await expectLater(player.startPreview(' '), throwsA(isA<PlatformException>().having((e) => e.code, 'code', 'INVALID_ARGUMENT')));
+  });
+
+  // case: P-07·P-08 (SMV-2021 D3) — 시청 중 거부는 SDK_ERROR + details(ShopliveError 맵)로 오고 앱이 그대로 읽는다
+  test('startPreview while viewing fails with SDK_ERROR whose details parse as PREVIEW_IGNORED_WHILE_VIEWING', () async {
+    responder = (_) => throw PlatformException(
+          code: 'SDK_ERROR',
+          message: 'ignored',
+          details: {'code': 'PREVIEW_IGNORED_WHILE_VIEWING', 'message': 'ignored', 'rawCode': 9520, 'recoverable': false},
+        );
+    final error = await player.startPreview('p').then<PlatformException?>((_) => null, onError: (Object e) => e as PlatformException);
+    expect(error?.code, ShoplivePlatformErrorCode.sdkError);
+    final details = ShopliveError.tryParse(error?.details);
+    expect((details?.code, details?.rawCode, details?.recoverable), ('PREVIEW_IGNORED_WHILE_VIEWING', 9520, false));
   });
 }

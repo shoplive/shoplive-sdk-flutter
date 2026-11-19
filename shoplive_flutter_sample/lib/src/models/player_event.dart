@@ -4,7 +4,7 @@ import 'package:shoplive_core/shoplive_core.dart';
 import '../wire.dart';
 import 'player_enums.dart';
 
-/// 캠페인 정보(getCurrentCampaign / campaignInfoReceived). status는 nullable(SDK @Nullable, design §2.6).
+/// 캠페인 정보(getCurrentCampaign / campaignInfoReceived). status는 nullable(SDK @Nullable).
 class ShopliveCampaignInfo {
   const ShopliveCampaignInfo({required this.campaignKey, this.title, this.status});
 
@@ -20,7 +20,7 @@ class ShopliveCampaignInfo {
   }
 }
 
-/// 공유 요청 정보([ShoplivePlayerShareRequested], SDK 3.0.4+ — SMV-1899). 필드 이름은 네이티브 `ShopliveShareInfo`와 같다.
+/// 공유 요청 정보([ShoplivePlayerShareRequested], SDK 3.0.4+). 필드 이름은 네이티브 `ShopliveShareInfo`와 같다.
 /// 모든 필드는 nullable: 원천이 없으면 null이다(SDK가 지어 채우지 않음). iOS는 URL로 해석하지 못한 [url]·[thumbnailUrl]도 null로 준다(플랫폼 차이).
 class ShopliveShareInfo {
   const ShopliveShareInfo({this.url, this.campaignKey, this.title, this.descriptionText, this.thumbnailUrl});
@@ -60,11 +60,11 @@ class ShopliveBrand {
 ShopliveCampaignStatus? _status(Object? raw) =>
     raw == null ? null : parseWireEnum(ShopliveCampaignStatus.values, raw, unknown: ShopliveCampaignStatus.unknown);
 
-/// `shoplive_player/events` 이벤트(design.md rev2 §2.5).
+/// `shoplive_player/events` 이벤트.
 sealed class ShoplivePlayerEvent {
   const ShoplivePlayerEvent();
 
-  /// 네이티브 payload → 이벤트. **던지지 않는다**: 미지 type·형식 오류는 [ShoplivePlayerUnknownEvent](pair #15).
+  /// 네이티브 payload → 이벤트. **던지지 않는다**: 미지 type·형식 오류는 [ShoplivePlayerUnknownEvent].
   static ShoplivePlayerEvent fromWire(Object? raw) {
     final m = asStringMap(raw);
     final type = m?['type'];
@@ -218,7 +218,7 @@ class ShopliveUserNameUpdateRequested extends ShoplivePlayerEvent {
 // TODO(SDP-VERIFY): 요확인 — 아래 문서 주석 'url null' 줄: iOS에서 url이 nil일 때 error 이벤트가 함께 오는지(Android는 NOT_INITIALIZED_SHARE_URL 1건) · 근거 SMV-1899
 // TODO(SDP-VERIFY): 요확인 — 아래 문서 주석 'Android 공유 화면 띄우기' 줄: 공유 전 in-App PIP 전환 패턴이 공유 화면 종료 뒤 방송 복귀를 보장하는지 실측 · 근거 SMV-1899
 // TODO(SDP-VERIFY): 요확인 — 아래 문서 주석 'iOS 시트 위치' 줄: share_plus 등 앱 공유 시트가 .overFullScreen 플레이어 위에 표시되는지 실측 · 근거 SMV-1899
-/// 시청자가 공유 버튼을 눌렀다(SDK 3.0.4+, SMV-1899) — 앱이 [info]로 공유 화면을 띄운다.
+/// 시청자가 공유 버튼을 눌렀다(SDK 3.0.4+) — 앱이 [info]로 공유 화면을 띄운다.
 ///
 /// `navigation.isCustomShareEnabled: true`로 시작한 세션에서만 오고, 이때 SDK 기본 공유 시트는 뜨지 않는다.
 /// false·생략이면 이 이벤트 없이 기본 시트가 뜬다. SDK가 알린 1건을 1건으로 전달한다(브릿지는 합치거나 늘리지 않음).
@@ -232,7 +232,7 @@ class ShoplivePlayerShareRequested extends ShoplivePlayerEvent {
   final ShopliveShareInfo info;
 }
 
-/// 매핑 불가·미지·형식 오류 이벤트(N-03). [rawType]은 디버그 표시용.
+/// 매핑 불가·미지·형식 오류 이벤트. [rawType]은 디버그 표시용.
 class ShoplivePlayerUnknownEvent extends ShoplivePlayerEvent {
   const ShoplivePlayerUnknownEvent({required this.rawType});
   final String rawType;

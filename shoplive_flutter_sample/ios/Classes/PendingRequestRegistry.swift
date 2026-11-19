@@ -67,7 +67,7 @@ final class PlayerDelegateBridge: ShoplivePlayerDelegate {
         self.scheduler = scheduler
     }
 
-    /// Replaced session (D6, SMV-1899 A4-5). Set only by PlayerMethodHandler.retire / the in-app PIP start path; main thread only.
+    /// Replaced session (D6, SMV-1899 A4-5). Set only by PlayerMethodHandler.retire (start, preview adoption) and presentNewSession before presenting; main thread only.
     var isRetired = false
 
     /// Current engine generation and not replaced - judged once when the main-hop block runs.

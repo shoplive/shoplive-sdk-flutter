@@ -38,7 +38,7 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
                                     onCancelled: { [weak registry] in registry?.flushAll() })
         let attach = self.attach
         let scheduler = self.scheduler
-        handler = PlayerMethodHandler(registry: registry, hostScreen: KeyWindowHostScreen()) { [weak events, weak requests, weak registry] handler in
+        handler = PlayerMethodHandler(registry: registry, hostScreen: KeyWindowHostScreen(), scheduler: scheduler) { [weak events, weak requests, weak registry] handler in
             guard let events = events, let requests = requests, let registry = registry else { return nil }
             return PlayerDelegateBridge(handler: handler, events: events, requests: requests, registry: registry,
                                         attach: attach, scheduler: scheduler)
@@ -75,12 +75,20 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        let deferred = call.method == "getCampaigns" // the only method answered later, by CampaignListCalls (SMV-1899 D10-e)
+        // Answered later: getCampaigns by CampaignListCalls (SMV-1899 D10-e), startPreview after its main hop (SMV-2021 D3).
+        let deferred = call.method == "getCampaigns" || call.method == "startPreview"
         let outcome = bridgedCall { () -> Any? in
             switch call.method {
             case "getCampaigns":
                 guard let campaigns = campaigns else { throw bridgeDetachedError }
                 try campaigns.begin(try Args.of(call.arguments), reply: result)
+                return nil
+            case "startPreview":
+                guard let handler = handler else { throw bridgeDetachedError }
+                try handler.beginStartPreview(try Args.of(call.arguments)) { outcome in
+                    if case .failure(let f) = outcome { bridgeLog(Self.tag, "startPreview: \(f.code)") }
+                    outcome.deliver(result)
+                }
                 return nil
             case "cancelGetCampaigns":
                 guard let campaigns = campaigns else { throw bridgeDetachedError }
@@ -91,7 +99,7 @@ public final class ShoplivePlayerPlugin: NSObject, FlutterPlugin {
             }
         }
         if case .failure(let f) = outcome { bridgeLog(Self.tag, "\(call.method): \(f.code)") }
-        // A started getCampaigns is replied by CampaignListCalls; only its early failures are delivered here (exactly once).
+        // A started getCampaigns / startPreview is replied by its owner; only early failures are delivered here (exactly once).
         if deferred, case .success = outcome { return }
         outcome.deliver(result)
     }

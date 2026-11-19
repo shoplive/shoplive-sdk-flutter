@@ -1,10 +1,10 @@
 import 'package:meta/meta.dart';
 import '../wire_enum.dart' as wire;
 
-/// 프로필 성별(wire: design.md rev2 §2.3).
+/// 프로필 성별.
 enum ShopliveGender { male, female, neutral, undefined }
 
-/// `Shoplive.setUser` 사용자(design.md rev2 §2.4).
+/// `Shoplive.setUser` 사용자.
 sealed class ShopliveUser {
   const ShopliveUser();
 

@@ -1,5 +1,5 @@
 #
-# shoplive_core - Flutter bridge for Shoplive iOS SDK 3.0.5 (DRAFT-flutter-sdk-302-ios design section 4; SMV-1749, SMV-1899).
+# shoplive_core - Flutter bridge for Shoplive iOS SDK 3.0.6 (DRAFT-flutter-sdk-302-ios design section 4; SMV-1749, SMV-1899).
 # The SDK XCFrameworks are downloaded from the GitHub release at pod install, verified by sha256
 # (SDK Package.swift constants) and vendored. Keep this file ASCII-only (pod install may run without a UTF-8 locale).
 #
@@ -10,12 +10,12 @@ load File.join(__dir__, 'shoplive_ios_sdk.rb')
 pubspec = YAML.safe_load(File.read(File.join(__dir__, '..', 'pubspec.yaml')))
 
 # Shoplive iOS SDK version - must be identical in the three Shoplive podspecs (checked by a test, I-D-05).
-shoplive_ios_sdk_version = '3.0.5'
-# XCFrameworks owned by this pod and their sha256 (https://github.com/shoplive/shoplive-sdk-ios/blob/3.0.5/Package.swift)
+shoplive_ios_sdk_version = '3.0.6'
+# XCFrameworks owned by this pod and their sha256 (https://github.com/shoplive/shoplive-sdk-ios/blob/3.0.6/Package.swift)
 shoplive_ios_sdk_artifacts = {
-  'ShopliveCore' => 'acf9e29efd58daf85d8d0ebbc4f4be3cd30f732874dc7c9c78870ddb88c27d24',
-  'ShopLiveWebRTCHelperSDK' => 'e5d64f511edc10ee0ddb07f5e74dc7dcd606de0eb999010405bb55395b3388f8',
-  'WebRTC' => '404db28c04852434a0736e44cd5c22c49e6a99ec6ca3f0d66a4b0da0626bb601',
+  'ShopliveCore' => 'becc7ee93ab42d2ef03639aa1de5678d2c68120d9a094429204d9332ae4a43f3',
+  'ShopLiveWebRTCHelperSDK' => 'cada5a6cfd4f7577741b45819093f5d8114a9e9f535477478d710ab65f7f37e3',
+  'WebRTC' => 'e70b180ae4413cc63d497cb78395af3c50320e6b075ab820eff581af6523ee42',
 }
 
 ShopliveIosSdk.ensure!(pod_dir: __dir__, version: shoplive_ios_sdk_version, artifacts: shoplive_ios_sdk_artifacts)

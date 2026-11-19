@@ -1,5 +1,5 @@
 import 'package:meta/meta.dart';
-/// `Shoplive.sendConversionEvent` 데이터(design.md rev2 §2.4·§2.6). null 필드는 키를 생략한다.
+/// `Shoplive.sendConversionEvent` 데이터. null 필드는 키를 생략한다.
 class ShopliveConversionData {
   const ShopliveConversionData({this.type, this.products, this.orderId, this.referrer, this.custom});
 

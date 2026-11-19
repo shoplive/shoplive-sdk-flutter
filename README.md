@@ -1,6 +1,6 @@
 # Shoplive SDK for Flutter
 
-Flutter plugins and sample app for Shoplive Android SDK **3.0.6** and iOS SDK **3.0.5**.
+Flutter plugins and sample app for Shoplive Android SDK **3.0.8** and iOS SDK **3.0.6**.
 
 - Integration guide: https://developer.shoplive.cloud/mobile
 - To use Shoplive, contact ask@shoplive.cloud.
@@ -38,7 +38,7 @@ dependencies:
 Then do the platform setup:
 
 - **Android:** The plugins add the Shoplive Maven repository (`https://sdk.shoplive.cloud/maven-repo`) for you. If your project declares the repository itself, follow "Android: Maven repository setup" in the package README.
-- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.5 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
+- **iOS:** Set `platform :ios, '15.0'` in `ios/Podfile`. The plugins download the iOS SDK 3.0.6 XCFrameworks during `pod install` and verify each sha256. For proxy, mirror and offline CI options, see "iOS setup" in the package README.
 
 ## Quick start
 
@@ -55,6 +55,14 @@ await player.start('CAMPAIGN_KEY');
 
 For configuration, events, coupon and custom-action requests, PIP, error codes and known limitations, see the [`shoplive_player` README](shoplive_flutter_sample/README.md).
 
+## Upgrading from 3.0.4
+
+Change the three package versions to 3.0.5 together. Coming from 3.0.3, also read "Upgrading from 3.0.3" below. Three cases need an edit:
+
+- A `switch` over `ShoplivePipRatio` without a `default` case must handle the new `auto`.
+- `startPreview` can now fail where 3.0.4 completed (while a broadcast is being watched, and on iOS before `Shoplive.initialize`): wrap it in `try` / `catch` for `PlatformException` (`SDK_ERROR`).
+- Classes that `implements` `ShopliveSoundOptions` or `ShoplivePlayer` (test doubles) must add `muteOnFullScreen` and the new `startPreview` parameter.
+
 ## Upgrading from 3.0.3
 
 Change the three package versions to 3.0.4 together. Most 3.0.3 code compiles unchanged. Three cases need an edit:
@@ -64,6 +72,8 @@ Change the three package versions to 3.0.4 together. Most 3.0.3 code compiles un
 - Classes that `implements` a plugin class (test doubles) must implement the new members.
 
 `ShopliveAndroidPlayerOptions(enterOSPipOnBackPressed: ...)` still compiles (deprecated); use `backPressEntersPip`.
+
+New in 3.0.5: the plugins are built on the native Android SDK 3.0.8 and iOS SDK 3.0.6. A preview can stay muted when the viewer expands it (`sound.muteOnFullScreen`, `startPreview(..., muteOnFullScreen: true)`), `startPreview` with another key switches the campaign in the same window on iOS too, and `ShoplivePipRatio.auto` and `ShopliveResizeMode.auto` match the native defaults. Behavior changes (for example, `startPreview` while a broadcast is being watched now fails with `PREVIEW_IGNORED_WHILE_VIEWING`, and `play` with the campaign already on screen is ignored) are listed in each package's CHANGELOG.
 
 New in 3.0.4: custom share handling (`navigation.isCustomShareEnabled`), in-app PIP button options (`pip.closeButton` / `restoreButton`), the close reason (`ShoplivePlayerStateChanged.closeReason`), the campaign list (`ShoplivePlayerAPI.getCampaigns`), a one-call preview (`ShoplivePlayer.startPreview`), and the Android-only `android.backPressEntersPip` and `ShopliveResizeMode.auto`. The 3.0.4 packages are built on the native Android SDK 3.0.6 and iOS SDK 3.0.5; their behavior changes (for example, the Android back button now closes the player by default, and a new access key closes players started with the old key) are listed in each package's CHANGELOG.
 

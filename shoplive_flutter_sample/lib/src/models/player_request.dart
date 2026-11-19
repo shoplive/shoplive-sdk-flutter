@@ -2,7 +2,7 @@ import 'package:meta/meta.dart';
 import '../wire.dart';
 import 'player_enums.dart';
 
-/// 쿠폰·커스텀 액션 응답(design §2.4 respondCoupon/respondCustomAction). [status]는 계약상 필수.
+/// 쿠폰·커스텀 액션 응답(respondCoupon/respondCustomAction). [status]는 계약상 필수.
 class ShopliveCouponResult {
   const ShopliveCouponResult({required this.success, required this.status, this.message, this.alertType});
 
@@ -46,7 +46,7 @@ class ShopliveNavigationRequest {
   final String url;
 }
 
-/// 쿠폰 받기 요청. [respond]는 1회만 유효하다(C-4).
+/// 쿠폰 받기 요청. [respond]는 1회만 유효하다.
 ///
 /// [respond]가 false를 돌려주는 경우(사유는 구분하지 않음): 응답 대기 시간 초과로 이미 폴백 응답됨 /
 /// 같은 요청에 이미 응답함(다른 리스너 포함) / 플러그인 엔진 detach 또는 요청 리스너 해제로 폴백 처리됨.
@@ -61,7 +61,7 @@ class ShopliveCouponRequest {
   Future<bool> respond(ShopliveCouponResult result) => _responder(requestId, result);
 }
 
-/// 커스텀 버튼 요청. [respond]는 1회만 유효하며 false 사유는 [ShopliveCouponRequest]와 같다(C-4).
+/// 커스텀 버튼 요청. [respond]는 1회만 유효하며 false 사유는 [ShopliveCouponRequest]와 같다.
 class ShopliveCustomWebActionRequest {
   ShopliveCustomWebActionRequest({
     required this.requestId,

@@ -2,7 +2,7 @@ import 'package:meta/meta.dart';
 import '../wire.dart' as wire;
 import 'player_enums.dart';
 
-/// 플레이어 설정(design.md rev2 §2.4 Configuration). 모든 필드가 선택이며 **현재 설정 위에 병합**된다(CFG-01):
+/// 플레이어 설정. 모든 필드가 선택이며 **현재 설정 위에 병합**된다:
 /// null 필드는 현재 값을 유지한다. `getConfiguration()`은 전체 값을 채워 돌려준다.
 ///
 /// 한계: nullable 필드(navigation.shareScheme, android.isVolumeKeyEnabled)를 null로 되돌리는 표현은 이 Dart API에 없다.
@@ -28,7 +28,7 @@ class ShoplivePlayerConfiguration {
   /// 맵 단위로 교체된다.
   final Map<String, String>? customParameters;
 
-  /// Android 전용 옵션. iOS에서는 무시된다(CS-03).
+  /// Android 전용 옵션. iOS에서는 무시된다.
   final ShopliveAndroidPlayerOptions? android;
 
   @internal
@@ -89,15 +89,15 @@ class ShoplivePipOptions {
   final ShoplivePipRatio? aspectRatio;
   final ShopliveInsets? padding;
 
-  /// in-app PIP 창을 화면 밖으로 끌어 놓아 닫을 수 있는지(SDK 3.0.3+, Android·iOS). null이면 현재 값 유지(SDK 기본값 —
-  /// Android·iOS 모두 true — Android는 바이트코드, iOS는 실측으로 확인).
+  /// in-app PIP 창을 화면 밖으로 끌어 놓아 닫을 수 있는지(SDK 3.0.3+, Android·iOS). null이면 현재 값 유지(SDK 기본값은
+  /// Android·iOS 모두 true).
   final bool? isDragOutToCloseEnabled;
 
-  /// in-App PIP 창의 닫기(×) 버튼(SDK 3.0.4+, Android·iOS — SMV-1899). null이면 현재 값 유지.
+  /// in-App PIP 창의 닫기(×) 버튼(SDK 3.0.4+, Android·iOS). null이면 현재 값 유지.
   /// 숨기면 끌어내기([isDragOutToCloseEnabled])·앱의 `close()`로만 닫힌다 — 둘 다 막으면 사용자가 닫을 UI가 없다.
   final ShopliveButtonOptions? closeButton;
 
-  /// in-App PIP 창의 복귀(풀스크린으로) 버튼(SDK 3.0.4+, Android·iOS — SMV-1899). null이면 현재 값 유지.
+  /// in-App PIP 창의 복귀(풀스크린으로) 버튼(SDK 3.0.4+, Android·iOS). null이면 현재 값 유지.
   /// 숨기면 PIP 창을 탭해 복귀한다.
   final ShopliveButtonOptions? restoreButton;
 
@@ -131,7 +131,7 @@ class ShoplivePipOptions {
         );
 }
 
-/// in-App PIP 버튼 옵션(SDK 3.0.4+ `ButtonOptions`, SMV-1899). OS PIP 창에는 적용되지 않는다.
+/// in-App PIP 버튼 옵션(SDK 3.0.4+ `ButtonOptions`). OS PIP 창에는 적용되지 않는다.
 ///
 /// [isHidden]이 true면 이미지와 상관없이 버튼을 그리지 않는다(우선순위는 SDK가 정함).
 class ShopliveButtonOptions {
@@ -190,21 +190,32 @@ class ShopliveInsets {
 }
 
 class ShopliveSoundOptions {
-  const ShopliveSoundOptions({this.muteOnStart, this.mixWithOthers});
+  const ShopliveSoundOptions({this.muteOnStart, this.mixWithOthers, this.muteOnFullScreen});
 
   final bool? muteOnStart;
   final bool? mixWithOthers;
+
+  /// Keeps a preview (opened as in-app PIP) muted when the viewer expands it to fullscreen. SDK default `false`: expanding unmutes.
+  /// Applies to a preview session opened with `start` (type preview, presentationStyle pip); `startPreview` uses its own
+  /// `muteOnFullScreen` argument instead. Android SDK 3.0.7+ and iOS SDK 3.0.6+ `SoundOptions.muteOnFullScreen`.
+  /// Omitted keeps the current value.
+  final bool? muteOnFullScreen;
 
   @internal
   Map<String, Object?> toWire() {
     final m = <String, Object?>{};
     wire.putIfNotNull(m, 'muteOnStart', muteOnStart);
     wire.putIfNotNull(m, 'mixWithOthers', mixWithOthers);
+    wire.putIfNotNull(m, 'muteOnFullScreen', muteOnFullScreen);
     return m;
   }
 
   static ShopliveSoundOptions? _fromWire(Map<String, Object?>? m) =>
-      m == null ? null : ShopliveSoundOptions(muteOnStart: wire.asType<bool>(m['muteOnStart']), mixWithOthers: wire.asType<bool>(m['mixWithOthers']));
+      m == null ? null : ShopliveSoundOptions(
+          muteOnStart: wire.asType<bool>(m['muteOnStart']),
+          mixWithOthers: wire.asType<bool>(m['mixWithOthers']),
+          muteOnFullScreen: wire.asType<bool>(m['muteOnFullScreen']),
+        );
 }
 
 class ShopliveAppearanceOptions {
@@ -230,7 +241,7 @@ class ShopliveNavigationOptions {
   final ShopliveNavigationAction? actionOnNavigation;
   final String? shareScheme;
 
-  /// 공유를 앱이 처리할지(SDK 3.0.4+, Android·iOS — SMV-1899). true면 공유 탭 때 SDK 기본 시트 대신
+  /// 공유를 앱이 처리할지(SDK 3.0.4+, Android·iOS). true면 공유 탭 때 SDK 기본 시트 대신
   /// [ShoplivePlayerShareRequested] 이벤트가 온다(events를 반드시 구독). null이면 현재 값 유지(SDK 기본값 false).
   /// 재생 중 바꾸면 Android는 바로, iOS는 다음 start·play·reload부터 적용된다(SDK 반영 시점 — README Configuration).
   final bool? isCustomShareEnabled;
@@ -269,7 +280,7 @@ class ShopliveOverlayOptions {
       m == null ? null : ShopliveOverlayOptions(ui: _enum(ShopliveOverlayUIMode.values, m['ui'], ShopliveOverlayUIMode.unknown));
 }
 
-/// Android 전용 옵션(configuration.android, CS-03). iOS에서는 무시된다.
+/// Android 전용 옵션(configuration.android). iOS에서는 무시된다.
 class ShopliveAndroidPlayerOptions {
   /// [enterOSPipOnBackPressed]는 [backPressEntersPip]의 옛 이름이다. 둘 다 주면 [backPressEntersPip]가 이긴다.
   const ShopliveAndroidPlayerOptions({

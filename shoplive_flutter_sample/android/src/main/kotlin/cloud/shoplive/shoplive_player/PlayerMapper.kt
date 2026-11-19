@@ -59,9 +59,10 @@ internal object PlayerContract {
     const val RESPOND_COUPON = "respondCoupon"
     const val RESPOND_CUSTOM_ACTION = "respondCustomAction"
     const val RESPOND_FALLBACK = "respondFallback"
-    /** 회신을 SDK 콜백 때 보내는 유일한 메서드(SMV-1899 D10). */
+    /** 회신을 SDK 콜백 때 보내는 메서드(SMV-1899 D10). */
     const val GET_CAMPAIGNS = "getCampaigns"
     const val CANCEL_GET_CAMPAIGNS = "cancelGetCampaigns"
+    /** 회신을 다음 메인 루프 차례에 보내는 메서드(SMV-2021 D3 — SDK 9520 통지를 기다린다). */
     const val START_PREVIEW = "startPreview"
 
     val METHODS = listOf(
@@ -81,6 +82,7 @@ internal object PlayerContract {
     const val COMMAND = "command"
     const val PAYLOAD = "payload"
     const val MUTED = "muted"
+    const val MUTE_ON_FULL_SCREEN = "muteOnFullScreen"
     const val MODE = "mode"
     const val TIMEOUT_MS = "timeoutMs"
     const val REQUEST_ID = "requestId"
@@ -124,6 +126,8 @@ internal object PlayerMapper {
     val PIP_RATIO = mapOf(
         "ratio1x1" to ShoplivePipRatio.RATIO_1X1, "ratio1x2" to ShoplivePipRatio.RATIO_1X2, "ratio2x3" to ShoplivePipRatio.RATIO_2X3,
         "ratio3x4" to ShoplivePipRatio.RATIO_3X4, "ratio9x16" to ShoplivePipRatio.RATIO_9X16,
+        // SDK 3.0.7 AUTO = 방송 비율을 따름, PipOptions.aspectRatio 기본값(SMV-2021 D4)
+        "auto" to ShoplivePipRatio.AUTO,
     )
     val NAVIGATION_ACTION = mapOf(
         "pip" to ShopliveNavigationAction.PIP, "keep" to ShopliveNavigationAction.KEEP, "close" to ShopliveNavigationAction.CLOSE,
@@ -197,6 +201,8 @@ internal object PlayerMapper {
                 sound = cs.copy(
                     muteOnStart = nonNullBool(sound, "muteOnStart") ?: cs.muteOnStart,
                     mixWithOthers = nonNullBool(sound, "mixWithOthers") ?: cs.mixWithOthers,
+                    // SDK 3.0.7 신규(기본 false, SMV-2021 D1). 생략 = 현재 값 유지
+                    muteOnFullScreen = nonNullBool(sound, "muteOnFullScreen") ?: cs.muteOnFullScreen,
                     autoResumeOnFocusGained = nonNullBool(android, "autoResumeOnFocusGained") ?: cs.autoResumeOnFocusGained,
                     isVolumeKeyEnabled = if (android?.has("isVolumeKeyEnabled") == true) android.optBool("isVolumeKeyEnabled") else cs.isVolumeKeyEnabled,
                 ),
@@ -358,7 +364,9 @@ internal object PlayerMapper {
             "closeButton" to mapOf("isHidden" to c.pip.closeButton.isHidden),
             "restoreButton" to mapOf("isHidden" to c.pip.restoreButton.isHidden),
         ),
-        "sound" to mapOf("muteOnStart" to c.sound.muteOnStart, "mixWithOthers" to c.sound.mixWithOthers),
+        "sound" to mapOf(
+            "muteOnStart" to c.sound.muteOnStart, "mixWithOthers" to c.sound.mixWithOthers, "muteOnFullScreen" to c.sound.muteOnFullScreen,
+        ),
         "appearance" to mapOf("indicatorColor" to (c.appearance.indicatorColor.toLong() and ARGB_MASK)),
         "navigation" to mapOf(
             "actionOnNavigation" to wireOf(c.navigation.actionOnNavigation, NAVIGATION_ACTION),

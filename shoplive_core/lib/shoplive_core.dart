@@ -1,6 +1,5 @@
 /// Shoplive 공통(core) Flutter 플러그인 — Android `cloud.shoplive:shoplive-core` · iOS `ShopliveCore`(버전은 README).
 ///
-/// 채널 계약: design.md rev2 §2.4 (DRAFT-flutter-sdk-302-android).
 /// 공개 API만 export한다. `src/wire_enum.dart`와 MethodChannel 구현은 내부용이다
 /// (shoplive_player·shoplive_streamer가 `package:shoplive_core/src/...`로 import — 공개 API 아님).
 library shoplive_core;
