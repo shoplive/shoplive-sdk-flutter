@@ -360,6 +360,7 @@ A method the platform does not implement fails with `MissingPluginException`. Ev
 ## Known limitations
 
 - **Android: `reload()` sends `closed` before it plays again.** You get `stateChanged(closed)` with `appRequest`, then `loading` and `playing`, and the session goes on. Do not treat that `closed` as the end of the session. iOS (SDK 3.0.6) goes straight to `loading` and `playing`.
+- **iOS: `stop` keeps a fullscreen player on screen.** After `stop` on a fullscreen player (including a preview the viewer expanded), `closed` (`appRequest`) arrives but the stopped screen stays, and the viewer has no button to close it. Call `close()` to dismiss it; it sends no second `closed`. Until then, `startPreview` fails with `PREVIEW_IGNORED_WHILE_VIEWING` (9520).
 - **`play` with the campaign already on screen does nothing.** No events are sent. To start it over, call `stop` and then `play`, or `reload`.
 - **`getCampaigns` has no plugin wait limit.** The native HTTP limits apply (Android 30 s per call, iOS 10 s without data), but if the native side never answers, the `Future` may not complete. Use `Future.timeout` and `ShopliveCancelToken.cancel()` (see "Campaign list").
 - **Android: `startPreview` before `Shoplive.initialize` fails without the reason.** The `Future` ends with `SDK_ERROR` but `details` is empty, because Android SDK 3.0.8 does not pass the `NOT_INITIALIZED_ACCESS_KEY` error to the app. iOS includes it.
