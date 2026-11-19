@@ -89,7 +89,7 @@ class ShoplivePlayer {
 
   Future<bool> isMuted() => _invokeRequired<bool>(_C.isMuted);
 
-  /// [ShopliveResizeMode.auto]는 Android 전용 판정이고 iOS에서는 fill로 적용된다.
+  /// [ShopliveResizeMode.auto]는 창 크기로 fill·fit을 고른다(Android, iOS SDK 3.0.6+). `getResizeMode()`는 고른 결과가 아니라 `auto`를 돌려준다.
   Future<void> setResizeMode(ShopliveResizeMode mode) => _invokeVoid(_C.setResizeMode, {'mode': resizeModeToWire(mode)});
 
   Future<ShopliveResizeMode> getResizeMode() async => resizeModeFromWire(await _invokeRequired<String>(_C.getResizeMode));
