@@ -1,3 +1,7 @@
+## 3.0.5
+
+Built on Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Native SDK release notes: [Android](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.8) · [iOS](https://github.com/shoplive/shoplive-sdk-ios/releases/tag/3.0.6).
+
 ### What's changed
 This release moves to Shoplive Android SDK 3.0.8 and iOS SDK 3.0.6. Previews can stay muted when the viewer expands them, `startPreview` with another key switches the campaign in the same window on iOS too, and playback fixes from both native SDKs are included. Android SDK 3.0.7 changes are included as well ([release notes](https://github.com/shoplive/shoplive-sdk-android/releases/tag/3.0.7)); if your app also calls the Android SDK from native code, rebuild that code against 3.0.8.
 
